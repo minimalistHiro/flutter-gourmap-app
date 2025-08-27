@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "974704293118",
+    "project_id": "groumap-deda4",
+    "storage_bucket": "groumap-deda4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:974704293118:android:edabf9fac208b8d95fa1af",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDugWTKFlE8R_gh-LwE_mOuLXRdHy9D324"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:974704293118:android:1cc6d330d4ccee9c5fa1af",
+        "android_client_info": {
+          "package_name": "com.stocopo.groumap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDugWTKFlE8R_gh-LwE_mOuLXRdHy9D324"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Firebase Storageのセキュリティルール - めちゃめちゃシンプル版
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 認証済みユーザーなら何でもできる（開発用）
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+} 

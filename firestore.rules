@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ユーザーコレクション
+    match /users/{userId} {
+      // 読み取り: 自分のデータのみ
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // 書き込み: 自分のデータのみ
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false; // 削除は禁止
+    }
+    
+    // 店舗コレクション
+    match /stores/{storeId} {
+      // 読み取り: 認証済みユーザー
+      allow read: if request.auth != null;
+      // 書き込み: サーバーのみ
+      allow write: if false;
+    }
+    
+    // ユーザースタンプコレクション（新しい構造）
+    match /user_stamps/{userId}/stores/{storeId} {
+      // 読み取り: 自分のスタンプデータのみ
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // 書き込み: 自分のスタンプデータのみ
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // スタンプ履歴コレクション
+    match /stamp_history/{historyId} {
+      // 読み取り: 認証済みユーザー（自分の履歴のみ）
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      // 書き込み: サーバーのみ
+      allow write: if false;
+    }
+    
+    // 投稿コレクション
+    match /posts/{postId} {
+      // 読み取り: 認証済みユーザー
+      allow read: if request.auth != null;
+      // 書き込み: 認証済みユーザー（自分の投稿のみ）
+      allow create: if request.auth != null && 
+        request.auth.uid == resource.data.createdBy;
+      allow update, delete: if request.auth != null && 
+        request.auth.uid == resource.data.createdBy;
+    }
+    
+    // 通知コレクション
+    match /notifications/{notificationId} {
+      // 読み取り: 認証済みユーザー
+      allow read: if request.auth != null;
+      // 書き込み: 店舗スタッフのみ（限定書き込み）
+      allow create: if request.auth != null && 
+        request.auth.uid in get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.staffIds;
+      allow update, delete: if request.auth != null && 
+        request.auth.uid in get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.staffIds;
+    }
+    
+    // クーポンコレクション
+    match /coupons/{couponId} {
+      // 読み取り: 認証済みユーザー
+      allow read: if request.auth != null;
+      // 書き込み: 認証済みユーザー（作成時は自分のユーザーIDと一致する必要がある）
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      // 更新・削除: 自分のクーポンのみ
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+
+    // クーポン使用履歴コレクション（オプション）
+    match /coupon_usage_history/{historyId} {
+      // 読み取り: 自分の使用履歴のみ
+      allow read: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      // 作成: 認証済みユーザー（自分の使用履歴のみ）
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      // 更新・削除: 作成者のみ
+      allow update, delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // その他のコレクション
+    match /{document=**} {
+      // 読み取り: 認証済みユーザー
+      allow read: if request.auth != null;
+      // 書き込み: デフォルトで拒否（必要に応じて個別設定）
+      allow write: if false;
+    }
+  }
+} 
