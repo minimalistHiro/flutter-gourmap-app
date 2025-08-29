@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../content_view.dart';
+import '../../services/firebase_auth_service.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -19,6 +20,9 @@ class _LoginViewState extends State<LoginView> {
   // TextEditingControllerを適切に管理
   late TextEditingController _emailController;
   late TextEditingController _passwordController;
+  
+  // Firebase Auth Service
+  final FirebaseAuthService _authService = FirebaseAuthService();
 
   bool get disabled {
     return email.isEmpty || password.isEmpty;
@@ -170,6 +174,80 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
+  // Googleサインイン
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userCredential = await _authService.signInWithGoogle();
+      
+      if (userCredential != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Googleアカウントでログインしました'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const ContentView()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(
+          'Googleログインエラー',
+          'Googleアカウントでのログインに失敗しました。\n\nエラー詳細: $e\n\nしばらく時間をおいてから再度お試しください。'
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Apple Sign In
+  Future<void> _signInWithApple() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userCredential = await _authService.signInWithApple();
+      
+      if (userCredential != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Apple IDでログインしました'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const ContentView()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(
+          'Apple IDログインエラー',
+          'Apple IDでのログインに失敗しました。\n\nエラー詳細: $e\n\nしばらく時間をおいてから再度お試しください。'
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -220,12 +298,7 @@ class _LoginViewState extends State<LoginView> {
               // ロゴ・タイトル
               _buildHeader(),
               
-              const SizedBox(height: 60),
-              
-              // ソーシャルログインボタン
-              _buildSocialLoginButtons(),
-              
-              const SizedBox(height: 40),
+              const SizedBox(height: 30),
               
               // 区切り線
               _buildDivider(),
@@ -261,6 +334,47 @@ class _LoginViewState extends State<LoginView> {
               
               // パスワードを忘れた方
               _buildForgotPassword(),
+              
+              const SizedBox(height: 30),
+              
+              // 区切り線
+              _buildDivider(),
+              
+              const SizedBox(height: 20),
+              
+              // Googleサインインボタン
+              _buildSocialButton(
+                text: 'Googleでログイン',
+                icon: Icons.account_circle,
+                backgroundColor: Colors.white,
+                textColor: Colors.black87,
+                borderColor: Colors.grey[300]!,
+                onPressed: isLoading ? null : _signInWithGoogle,
+              ),
+              
+              const SizedBox(height: 15),
+              
+              // Apple Sign Inボタン（Web環境では無効）
+              _buildSocialButton(
+                text: 'Apple IDでログイン（準備中）',
+                icon: Icons.apple,
+                backgroundColor: Colors.grey,
+                textColor: Colors.white,
+                borderColor: Colors.grey,
+                onPressed: null, // Web環境では無効化
+              ),
+              
+              const SizedBox(height: 10),
+              
+              // 注意書き
+              Text(
+                '※ソーシャルログインは現在準備中です',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
               
               const SizedBox(height: 40),
             ],
@@ -315,79 +429,9 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
-  Widget _buildSocialLoginButtons() {
-    return Column(
-      children: [
-        // Appleログイン
-        _buildSocialButton(
-          text: 'Appleでログイン',
-          icon: Icons.apple,
-          backgroundColor: Colors.black,
-          textColor: Colors.white,
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Appleログイン')),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        // Googleログイン
-        _buildSocialButton(
-          text: 'Googleでログイン',
-          icon: Icons.g_mobiledata,
-          backgroundColor: Colors.white,
-          textColor: Colors.black,
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Googleログイン')),
-            );
-          },
-          border: true,
-        ),
-      ],
-    );
-  }
 
-  Widget _buildSocialButton({
-    required String text,
-    required IconData icon,
-    required Color backgroundColor,
-    required Color textColor,
-    required VoidCallback onTap,
-    bool border = false,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: backgroundColor,
-          foregroundColor: textColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
-            side: border ? BorderSide(color: Colors.grey[300]!) : BorderSide.none,
-          ),
-          elevation: border ? 0 : 2,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24),
-            const SizedBox(width: 12),
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
+
 
   Widget _buildDivider() {
     return Row(
@@ -465,6 +509,47 @@ class _LoginViewState extends State<LoginView> {
           fontSize: 14,
           color: Color(0xFF1E88E5),
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialButton({
+    required String text,
+    required IconData icon,
+    required Color backgroundColor,
+    required Color textColor,
+    required Color borderColor,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: textColor,
+          side: BorderSide(color: borderColor, width: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(25),
+          ),
+          elevation: 1,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 24, color: textColor),
+            const SizedBox(width: 12),
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -37,6 +37,10 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
   // 店舗の投稿データ
   List<Map<String, dynamic>> _storePosts = [];
   bool _isLoadingPosts = true;
+  
+  // 店舗のクーポンデータ
+  List<Map<String, dynamic>> _storeCoupons = [];
+  bool _isLoadingCoupons = true;
 
   @override
   void initState() {
@@ -60,8 +64,9 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
           _isLoading = false;
         });
         
-        // 店舗データ読み込み完了後、投稿データも読み込む
+        // 店舗データ読み込み完了後、投稿データとクーポンデータも読み込む
         _loadStorePosts();
+        _loadStoreCoupons();
       } else {
         setState(() {
           _isLoading = false;
@@ -91,10 +96,21 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
 
       if (userStampDoc.exists) {
         final data = userStampDoc.data()!;
+        final totalStamps = data['stamps'] ?? 0;
+        
+        // ゴールドスタンプ数と通常スタンプ数を計算
+        int goldStamps = 0;
+        if (totalStamps >= 1) goldStamps++;
+        if (totalStamps >= 3) goldStamps++;
+        if (totalStamps >= 5) goldStamps++;
+        if (totalStamps >= 10) goldStamps++;
+        
         setState(() {
-          _userGoldStamps = data['goldStamps'] ?? 0;
-          _userRegularStamps = data['regularStamps'] ?? 0;
+          _userGoldStamps = goldStamps;
+          _userRegularStamps = totalStamps;
         });
+        
+        print('店舗ID: ${widget.storeId}, 総スタンプ数: $totalStamps, ゴールドスタンプ数: $goldStamps');
       } else {
         setState(() {
           _userGoldStamps = 0;
@@ -112,13 +128,13 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
       final user = _auth.currentUser;
       if (user == null) return;
 
-      final newRegularStamps = _userRegularStamps + 1;
-      int newGoldStamps = _userGoldStamps;
+      final newTotalStamps = _userRegularStamps + 1;
       
       // 1、3、5、10個目のスタンプでゴールドスタンプを増やす
-      if (newRegularStamps == 1 || newRegularStamps == 3 || 
-          newRegularStamps == 5 || newRegularStamps == 10) {
-        newGoldStamps += 1;
+      bool isGoldStampEarned = false;
+      if (newTotalStamps == 1 || newTotalStamps == 3 || 
+          newTotalStamps == 5 || newTotalStamps == 10) {
+        isGoldStampEarned = true;
       }
 
       // user_stampsコレクションを更新
@@ -130,22 +146,21 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
           .set({
         'userId': user.uid,
         'storeId': widget.storeId,
-        'regularStamps': newRegularStamps,
-        'goldStamps': newGoldStamps,
+        'stamps': newTotalStamps,
         'lastStampDate': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       // usersコレクションのgoldStampsとstampsも更新
       await _firestore.collection('users').doc(user.uid).update({
-        'goldStamps': FieldValue.increment(1), // ゴールドスタンプが増えた場合のみ
+        'goldStamps': FieldValue.increment(isGoldStampEarned ? 1 : 0), // ゴールドスタンプが増えた場合のみ
         'stamps': FieldValue.increment(1),     // 通常スタンプを1増やす
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       setState(() {
-        _userRegularStamps = newRegularStamps;
-        _userGoldStamps = newGoldStamps;
+        _userRegularStamps = newTotalStamps;
+        _userGoldStamps = _userGoldStamps + (isGoldStampEarned ? 1 : 0);
       });
     } catch (e) {
       print('スタンプ追加に失敗しました: $e');
@@ -299,6 +314,163 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
           _isLoadingPosts = false;
         });
       }
+    }
+  }
+
+  // 店舗のクーポンデータを読み込む
+  Future<void> _loadStoreCoupons() async {
+    try {
+      setState(() {
+        _isLoadingCoupons = true;
+      });
+
+      print('店舗クーポンデータ読み込み開始: 店舗ID = ${widget.storeId}');
+
+      // インデックスエラーを回避するため、まず全てのクーポンを取得してからフィルタリング
+      final couponsSnapshot = await _firestore
+          .collection('coupons')
+          .where('isActive', isEqualTo: true)
+          .limit(50)
+          .get();
+
+      print('取得したクーポン数: ${couponsSnapshot.docs.length}');
+      
+      // 店舗IDでフィルタリング
+      final filteredCoupons = couponsSnapshot.docs.where((doc) {
+        final data = doc.data();
+        return data['storeId'] == widget.storeId;
+      }).toList();
+      
+      print('フィルタリング後のクーポン数: ${filteredCoupons.length}');
+      
+      // 各クーポンのデータを確認
+      for (final doc in filteredCoupons) {
+        final data = doc.data();
+        print('クーポンID: ${doc.id}, データ: $data');
+      }
+
+      if (mounted) {
+        setState(() {
+          _storeCoupons = filteredCoupons.map((doc) {
+            final data = doc.data();
+            final endDate = data['endDate'];
+            final now = DateTime.now();
+            
+            // クライアントサイドで使用可能期間と使用済みをチェック
+            bool isAvailable = false;
+            DateTime? startDateTime;
+            DateTime? endDateTime;
+            
+            try {
+              // 開始日をチェック
+              if (data['startDate'] != null) {
+                startDateTime = (data['startDate'] as Timestamp).toDate();
+              }
+              
+              // 終了日をチェック
+              if (endDate != null) {
+                endDateTime = (endDate as Timestamp).toDate();
+              }
+              
+              // 今日の日付（時刻を除く）
+              final today = DateTime(now.year, now.month, now.day);
+              
+              // 開始日以降で終了日未満かチェック
+              if (startDateTime != null && endDateTime != null) {
+                final startDateOnly = DateTime(startDateTime.year, startDateTime.month, startDateTime.day);
+                final endDateOnly = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
+                isAvailable = today.isAfter(startDateOnly.subtract(const Duration(days: 1))) && 
+                             today.isBefore(endDateOnly.add(const Duration(days: 1)));
+              } else if (startDateTime != null) {
+                // 開始日のみ設定されている場合
+                final startDateOnly = DateTime(startDateTime.year, startDateTime.month, startDateTime.day);
+                isAvailable = today.isAfter(startDateOnly.subtract(const Duration(days: 1)));
+              } else if (endDateTime != null) {
+                // 終了日のみ設定されている場合
+                final endDateOnly = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
+                isAvailable = today.isBefore(endDateOnly.add(const Duration(days: 1)));
+              } else {
+                // 日付が設定されていない場合は使用可能とする
+                isAvailable = true;
+              }
+              
+              // 使用済みかチェック（ログインユーザーの場合のみ）
+              if (isAvailable && _auth.currentUser != null) {
+                final usedUserIds = List<String>.from(data['usedUserIds'] ?? []);
+                if (usedUserIds.contains(_auth.currentUser!.uid)) {
+                  isAvailable = false;
+                }
+              }
+            } catch (e) {
+              print('日付変換エラー: $e');
+              isAvailable = false;
+            }
+            
+            return {
+              'couponId': doc.id,
+              'title': data['title'] ?? 'タイトルなし',
+              'description': data['description'] ?? '',
+              'discountType': data['discountType'] ?? '割引率',
+              'discountValue': data['discountValue'] ?? '',
+              'startDate': data['startDate'],
+              'endDate': data['endDate'],
+              'startDateTime': startDateTime, // ソート用のDateTime
+              'endDateTime': endDateTime, // ソート用のDateTime
+              'imageUrl': data['imageUrl'],
+              'storeName': data['storeName'] ?? '店舗名なし',
+              'conditions': data['conditions'] ?? '',
+              'isAvailable': isAvailable,
+            };
+          })
+          .where((coupon) => coupon['isAvailable'] == true) // 使用可能なクーポンのみ
+          .toList()
+          ..sort((a, b) {
+            // 期限が近い順にソート
+            final aEndDate = a['endDateTime'] as DateTime?;
+            final bEndDate = b['endDateTime'] as DateTime?;
+            
+            if (aEndDate == null && bEndDate == null) return 0;
+            if (aEndDate == null) return 1;
+            if (bEndDate == null) return -1;
+            
+            return aEndDate.compareTo(bEndDate);
+          });
+          _isLoadingCoupons = false;
+        });
+      }
+    } catch (e) {
+      print('店舗クーポンデータの読み込みに失敗しました: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingCoupons = false;
+        });
+      }
+    }
+  }
+
+  // 期限表示用のフォーマットメソッド
+  String _formatEndDate(dynamic endDate) {
+    if (endDate == null) return '期限不明';
+    
+    try {
+      final date = (endDate as Timestamp).toDate();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      final couponDate = DateTime(date.year, date.month, date.day);
+      
+      String dateText;
+      if (couponDate.isAtSameMomentAs(today)) {
+        dateText = '今日';
+      } else if (couponDate.isAtSameMomentAs(tomorrow)) {
+        dateText = '明日';
+      } else {
+        dateText = '${date.month}月${date.day}日';
+      }
+      
+      return '$dateText ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}まで';
+    } catch (e) {
+      return '期限不明';
     }
   }
 
@@ -592,12 +764,6 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.star,
-                        color: Colors.amber,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
                       const Text(
                         'スタンプカード',
                         style: TextStyle(
@@ -748,53 +914,78 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
                       
                       return Container(
                         decoration: BoxDecoration(
-                          color: isCollected 
-                              ? (isGoldStamp ? Colors.amber : Colors.blue)
-                              : (isGoldStamp ? Colors.amber.withOpacity(0.3) : Colors.grey[300]),
+                          color: Colors.transparent,
                           shape: BoxShape.circle,
-                          border: isGoldStamp && !isCollected 
-                              ? Border.all(color: Colors.amber, width: 2)
-                              : null,
-                          boxShadow: isCollected && isGoldStamp ? [
-                            BoxShadow(
-                              color: Colors.amber.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ] : null,
                         ),
-                        child: Stack(
-                          children: [
-                            if (isCollected)
-                              Icon(
-                                isGoldStamp ? Icons.star : Icons.check,
-                                color: Colors.white,
-                                size: isGoldStamp ? 24 : 20,
-                              ),
-                            // 未収集のゴールドスタンプ位置に説明文を表示
-                            if (isGoldStamp && !isCollected)
-                              Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.star,
-                                      color: Colors.amber[600],
-                                      size: 16,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'ゴールド',
-                                      style: TextStyle(
-                                        color: Colors.amber[700],
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold,
+                        child: ClipOval(
+                          child: isCollected
+                              ? Image.asset(
+                                  isGoldStamp 
+                                      ? 'assets/images/gold_coin_icon.png'
+                                      : 'assets/images/silver_coin_icon.png',
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    // 画像が読み込めない場合のフォールバック
+                                    return Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.transparent,
+                                        shape: BoxShape.circle,
                                       ),
-                                    ),
-                                  ],
+                                      child: Center(
+                                        child: Icon(
+                                          isGoldStamp ? Icons.star : Icons.check,
+                                          color: Colors.grey[600],
+                                          size: 24,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: isGoldStamp
+                                      ? Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              ClipOval(
+                                                child: Image.asset(
+                                                  'assets/images/gold_coin_icon.png',
+                                                  width: 20,
+                                                  height: 20,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error, stackTrace) {
+                                                    return Icon(
+                                                      Icons.star,
+                                                      color: Colors.amber[700],
+                                                      size: 20,
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'ゴールドスタンプ',
+                                                style: TextStyle(
+                                                  color: Colors.amber[700],
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : null,
                                 ),
-                              ),
-                          ],
                         ),
                       );
                     },
@@ -883,33 +1074,33 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
                     ),
                   ),
                   const SizedBox(height: 15),
-                  SizedBox(
-                    height: 120,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: 3,
-                      itemBuilder: (context, index) {
-                        return Container(
-                          width: 150,
-                          margin: const EdgeInsets.only(right: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.orange[100],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Center(
+                  _isLoadingCoupons
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFFFF6B35),
+                        ),
+                      )
+                    : _storeCoupons.isEmpty
+                        ? const Center(
                             child: Text(
-                              '25%OFF\nクーポン',
+                              'この店舗からのクーポンはありません',
                               style: TextStyle(
                                 fontSize: 14,
-                                fontWeight: FontWeight.bold,
+                                color: Colors.grey,
                               ),
-                              textAlign: TextAlign.center,
+                            ),
+                          )
+                        : SizedBox(
+                            height: 300,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _storeCoupons.length,
+                              itemBuilder: (context, index) {
+                                final coupon = _storeCoupons[index];
+                                return _buildCouponCard(coupon);
+                              },
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1758,6 +1949,209 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
           icon,
           color: Colors.white,
           size: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCouponCard(Map<String, dynamic> coupon) {
+    // 終了日の表示用フォーマット
+    String formatEndDate() {
+      final endDate = coupon['endDate'];
+      if (endDate == null) return '期限不明';
+      
+      try {
+        final date = (endDate as Timestamp).toDate();
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final tomorrow = today.add(const Duration(days: 1));
+        final couponDate = DateTime(date.year, date.month, date.day);
+        
+        String dateText;
+        if (couponDate.isAtSameMomentAs(today)) {
+          dateText = '今日';
+        } else if (couponDate.isAtSameMomentAs(tomorrow)) {
+          dateText = '明日';
+        } else {
+          dateText = '${date.month}月${date.day}日';
+        }
+        
+        return '$dateText ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}まで';
+      } catch (e) {
+        return '期限不明';
+      }
+    }
+
+    // 割引表示用テキスト
+    String getDiscountText() {
+      final discountType = coupon['discountType'] ?? '割引率';
+      final discountValue = coupon['discountValue'] ?? '';
+      
+      if (discountType == '割引率') {
+        return '$discountValue%OFF';
+      } else if (discountType == '割引額') {
+        return '${discountValue}円OFF';
+      } else if (discountType == '固定価格') {
+        return '${discountValue}円';
+      }
+      return '特典あり';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        final couponId = coupon['couponId'];
+        if (couponId != null) {
+          // クーポン詳細画面に遷移（必要に応じて実装）
+          print('クーポン詳細画面に遷移: $couponId');
+        }
+      },
+      child: Container(
+        width: 170,
+        margin: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // 画像
+            Container(
+              width: 150,
+              height: 150,
+              margin: const EdgeInsets.only(top: 7, bottom: 7),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: coupon['imageUrl'] != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.network(
+                        coupon['imageUrl'],
+                        width: 150,
+                        height: 150,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            width: 150,
+                            height: 150,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
+                                color: const Color(0xFFFF6B35),
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.image,
+                            size: 50,
+                            color: Colors.grey,
+                          );
+                        },
+                      ),
+                    )
+                  : const Icon(
+                      Icons.image,
+                      size: 50,
+                      color: Colors.grey,
+                    ),
+            ),
+            
+            // 期限
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.red[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Text(
+                formatEndDate(),
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            
+            const SizedBox(height: 6),
+            
+            // タイトル
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                coupon['title'] ?? 'タイトルなし',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            
+            const SizedBox(height: 4),
+            
+            // 割引情報
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFFF6B35).withOpacity(0.3),
+                ),
+              ),
+              child: Text(
+                getDiscountText(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFF6B35),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            
+            const Divider(height: 1),
+            
+            // 店舗名
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                coupon['storeName'] ?? '店舗名なし',
+                style: const TextStyle(fontSize: 9),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            
+            const SizedBox(height: 3),
+          ],
         ),
       ),
     );

@@ -53,6 +53,15 @@ dependencies:
   image_picker: ^1.0.7
   http: ^1.1.0
   qr_flutter: ^4.1.0
+  share_plus: ^10.0.0
+  
+  # Social login packages
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.0
+  crypto: ^3.0.3
+  
+  # Animation packages
+  confetti: ^0.7.0
 
 dev_dependencies:
   flutter_test:

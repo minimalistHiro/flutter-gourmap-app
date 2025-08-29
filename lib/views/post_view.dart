@@ -44,6 +44,21 @@ class _PostViewState extends State<PostView> {
   }
   
   @override
+  void didUpdateWidget(PostView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // isShowCouponViewの値が変わった場合、タブを更新
+    if (widget.isShowCouponView != oldWidget.isShowCouponView) {
+      setState(() {
+        if (widget.isShowCouponView) {
+          _selectedTab = Tab.coupon;
+        } else {
+          _selectedTab = Tab.post;
+        }
+      });
+    }
+  }
+  
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 画面が表示されるたびに投稿データを再読み込み

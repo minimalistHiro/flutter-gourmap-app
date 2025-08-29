@@ -19,6 +19,9 @@ import 'coupon_detail_view.dart';
 import 'rank_detail_view.dart';
 import 'qr_code_views/qr_code_view.dart';
 import 'menu_views/ranking_list_view.dart';
+import 'feedback_view.dart';
+import 'entry_views/tutorial_view.dart';
+import 'slot_machine_view.dart';
 
 class HomeView extends StatefulWidget {
   final int selectedTab;
@@ -146,6 +149,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     
     // 未読通知の監視を開始
     _listenToUnreadNotifications();
+    
+    // 既存ユーザーにisOwnerフィールドを追加
+    _addOwnerFieldToExistingUsers();
   }
 
   @override
@@ -401,12 +407,34 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         });
         
         // Firestoreからユーザー情報を取得
-        _firestore.collection('users').doc(user.uid).snapshots().listen((snapshot) {
+        _firestore.collection('users').doc(user.uid).snapshots().listen((snapshot) async {
           if (snapshot.exists && mounted) {
             final data = snapshot.data()!;
+            
+            // 全店舗のゴールドスタンプ数を計算
+            int totalGoldStamps = 0;
+            try {
+              final userStampsSnapshot = await _firestore
+                  .collection('user_stamps')
+                  .doc(user.uid)
+                  .collection('stores')
+                  .get();
+              
+              for (final storeDoc in userStampsSnapshot.docs) {
+                final storeData = storeDoc.data();
+                final stampCount = storeData['stamps'] ?? 0;
+                if (stampCount >= 10) {
+                  totalGoldStamps += 1; // 10個以上でゴールドスタンプ
+                }
+              }
+            } catch (e) {
+              print('ゴールドスタンプ数取得エラー: $e');
+              totalGoldStamps = data['goldStamps'] ?? 0; // フォールバック
+            }
+            
             setState(() {
               points = data['points'] ?? 0;
-              goldStamps = data['goldStamps'] ?? 0;
+              goldStamps = totalGoldStamps;
               paid = data['paid'] ?? 10000;
             });
             
@@ -445,7 +473,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     switch (currentRank) {
       case 1: return 'ブロンズ';
       case 2: return 'シルバー';
-      case 3: return 'ゴールド';
+      case 3: return 'ゴールドスタンプ';
       case 4: return 'プラチナ';
       default: return 'ブロンズ';
     }
@@ -464,7 +492,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         };
       case 2: // シルバー → ゴールド
         return {
-          'rank': 'ゴールド',
+          'rank': 'ゴールドスタンプ',
           'goldStamps': 7,
           'paid': 20000,
           'color': Colors.amber,
@@ -499,11 +527,70 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             goldStamps = data['goldStamps'] ?? 0;
             paid = data['paid'] ?? 10000;
           });
+          
+          // チュートリアル表示チェック
+          final showTutorial = data['showTutorial'] ?? false;
+          if (showTutorial) {
+            _showTutorial();
+          }
         }
       } catch (e) {
         // エラーハンドリング
         print('データ更新エラー: $e');
       }
+    }
+  }
+
+  // チュートリアルを表示
+  Future<void> _showTutorial() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        // チュートリアル表示フラグをfalseに更新
+        await _firestore.collection('users').doc(user.uid).update({
+          'showTutorial': false,
+        });
+        
+        // チュートリアル画面に遷移
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const TutorialView(),
+            ),
+          );
+        }
+      } catch (e) {
+        print('チュートリアル表示処理エラー: $e');
+      }
+    }
+  }
+
+  // 既存ユーザーにisOwnerフィールドを追加
+  Future<void> _addOwnerFieldToExistingUsers() async {
+    try {
+      print('既存ユーザーへのオーナーステータス追加処理を開始...');
+      
+      final usersSnapshot = await _firestore.collection('users').get();
+      final batch = _firestore.batch();
+      
+      int updateCount = 0;
+      for (final doc in usersSnapshot.docs) {
+        final data = doc.data();
+        if (!data.containsKey('isOwner')) {
+          batch.update(doc.reference, {'isOwner': false});
+          updateCount++;
+        }
+      }
+      
+      if (updateCount > 0) {
+        await batch.commit();
+        print('$updateCount 人のユーザーにオーナーステータスを追加しました');
+      } else {
+        print('既存ユーザーは既にオーナーステータスを持っています');
+      }
+    } catch (e) {
+      print('既存ユーザーへのオーナーステータス追加に失敗しました: $e');
+      print('既存ユーザーへのオーナーステータス追加処理でエラーが発生しました: Exception: 既存ユーザーへのオーナーステータス追加に失敗しました:\n$e');
     }
   }
 
@@ -601,7 +688,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     switch (currentRank) {
       case 1: return 0.5;  // ブロンズ
       case 2: return 1.0;  // シルバー
-      case 3: return 1.5;  // ゴールド
+      case 3: return 1.5;  // ゴールドスタンプ
       case 4: return 2.0;  // プラチナ
       default: return 0.5; // ブロンズ
     }
@@ -613,7 +700,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     switch (currentRank) {
       case 1: return const Color(0xFFFF6B35); // ブロンズ（オレンジ）
       case 2: return Colors.grey; // シルバー（グレー）
-      case 3: return Colors.amber; // ゴールド（アンバー）
+      case 3: return Colors.amber; // ゴールドスタンプ（アンバー）
       case 4: return Colors.blue; // プラチナ（ブルー）
       default: return const Color(0xFFFF6B35); // ブロンズ（オレンジ）
     }
@@ -641,8 +728,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             const SizedBox(height: 10),
             _buildRankView(),
             const SizedBox(height: 20),
-            _buildSlideView(),
-            const SizedBox(height: 20),
+            // _buildSlideView(),
+            // const SizedBox(height: 20),
             _buildCouponView(),
             const SizedBox(height: 20),
             _buildPostView(),
@@ -936,10 +1023,21 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
-                    const Icon(
-                      Icons.monetization_on,
-                      color: Color(0xFFFF6B35), // GourMap color
-                      size: 20,
+                    ClipOval(
+                      child: Image.asset(
+                        'assets/images/point_icon.png',
+                        width: 20,
+                        height: 20,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          // 画像が読み込めない場合のフォールバック
+                          return Icon(
+                            Icons.monetization_on,
+                            color: const Color(0xFFFF6B35),
+                            size: 20,
+                          );
+                        },
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -998,10 +1096,36 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
-                    const Icon(
-                      Icons.star,
-                      color: Colors.amber,
-                      size: 20,
+                    ClipOval(
+                      child: Image.asset(
+                        'assets/images/gold_coin_icon.png',
+                        width: 20,
+                        height: 20,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          // 画像が読み込めない場合のフォールバック
+                          return Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                              ),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.star,
+                                color: Colors.white,
+                                size: 12,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -1012,7 +1136,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                       ),
                     ),
                     const Text(
-                      'ゴールド',
+                      'ゴールドスタンプ',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -1059,7 +1183,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             ),
           );
         } else {
-          setState(() => isShowRouletteView = true);
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const SlotMachineView(),
+            ),
+          );
         }
       },
       child: Container(
@@ -1068,7 +1196,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         color: isLogin ? const Color(0xFFFFEB3B) : Colors.grey, // ログイン状態に応じて色を変更
         child: Center(
           child: Text(
-            isLogin ? 'ルーレット' : 'ログインしてルーレット',
+            isLogin ? 'スロット' : 'ログインしてスロット',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -1097,11 +1225,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: [
-            _buildMenuButton('ポイント', Icons.monetization_on, isLogin),
-            _buildMenuButton('スタンプ', Icons.restaurant, isLogin),
+            _buildMenuButton('ポイント', 'assets/images/point_icon.png', isLogin, isImage: true),
+            _buildMenuButton('スタンプ', 'assets/images/silver_coin_icon.png', isLogin, isImage: true),
             _buildMenuButton('友達紹介', Icons.people, isLogin),
             _buildMenuButton('店舗一覧', Icons.store, isLogin),
             _buildMenuButton('ランキング', Icons.emoji_events, isLogin),
+            _buildMenuButton('フィードバック', Icons.feedback, isLogin),
             _buildMenuButton('店舗導入', Icons.qr_code_scanner, isLogin),
           ],
         ),
@@ -2133,6 +2262,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               builder: (context) => const RankingListView(),
             ),
           );
+        } else if (title == 'フィードバック') {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const FeedbackView(),
+            ),
+          );
         } else if (title == '店舗導入') {
           Navigator.of(context).push(
             MaterialPageRoute(
@@ -2150,7 +2285,23 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                   width: 24,
                   height: 24,
                   fit: BoxFit.contain,
-                  color: isLogin ? const Color(0xFFFF6B35) : Colors.grey,
+                  errorBuilder: (context, error, stackTrace) {
+                    print('画像読み込みエラー: $error');
+                    return Icon(
+                      Icons.monetization_on,
+                      size: 24,
+                      color: isLogin ? const Color(0xFFFF6B35) : Colors.grey,
+                    );
+                  },
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    if (wasSynchronouslyLoaded) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                      child: child,
+                    );
+                  },
                 )
               : Icon(
                   icon,
@@ -2191,40 +2342,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               fontWeight: FontWeight.bold,
               color: Colors.grey,
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ElevatedButton(
-                onPressed: () => _updateGoldStamps(goldStamps + 1),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('ゴールド+1'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (goldStamps > 0) {
-                    _updateGoldStamps(goldStamps - 1);
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: goldStamps > 0 ? Colors.red : Colors.grey,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('ゴールド-1'),
-              ),
-              ElevatedButton(
-                onPressed: () => _updateGoldStamps(0),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('ゴールドリセット'),
-              ),
-            ],
           ),
           const SizedBox(height: 16),
           Row(

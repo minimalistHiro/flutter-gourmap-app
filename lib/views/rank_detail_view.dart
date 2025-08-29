@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RankDetailView extends StatefulWidget {
   const RankDetailView({super.key});
@@ -8,8 +10,54 @@ class RankDetailView extends StatefulWidget {
 }
 
 class _RankDetailViewState extends State<RankDetailView> {
-  int stamp = 10;
-  int paid = 10000;
+  // 現在のユーザーデータ
+  int currentGoldStamps = 0;
+  int currentPaid = 0;
+  String currentRank = 'ブロンズ';
+  bool _isLoading = true;
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  // ユーザーデータを読み込む
+  Future<void> _loadUserData() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          
+          setState(() {
+            currentGoldStamps = userData['goldStamps'] ?? 0;
+            currentPaid = userData['totalPaid'] ?? 0;
+            currentRank = _calculateCurrentRank(currentGoldStamps, currentPaid);
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('ユーザーデータ読み込みエラー: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 現在のランクを計算
+  String _calculateCurrentRank(int goldStamps, int totalPaid) {
+    if (goldStamps >= 30 && totalPaid >= 100000) return 'ダイヤモンド';
+    if (goldStamps >= 15 && totalPaid >= 50000) return 'プラチナ';
+    if (goldStamps >= 7 && totalPaid >= 20000) return 'ゴールド';
+    if (goldStamps >= 3 && totalPaid >= 5000) return 'シルバー';
+    return 'ブロンズ';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,674 +74,740 @@ class _RankDetailViewState extends State<RankDetailView> {
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 20),
-            
-            // ヘッダー画像
-            Container(
-              height: 200,
-              margin: const EdgeInsets.symmetric(horizontal: 30),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(15),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFFFF6B35),
               ),
-              child: const Icon(
-                Icons.person,
-                size: 80,
-                color: Colors.grey,
-              ),
-            ),
-            
-            const SizedBox(height: 20),
-            
-            // タイトル
-            const Text(
-              'ランクを上げて、',
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E88E5),
-              ),
-            ),
-            const Text(
-              'ポイント還元率を上げよう！',
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E88E5),
+            )
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  
+                  // 現在のランクセクション
+                  _buildCurrentRankSection(),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 次のランクセクション
+                  _buildNextRankSection(),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 全ランクリストセクション
+                  _buildAllRanksSection(),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // ランクアップ方法セクション
+                  _buildRankUpMethodsSection(),
+                  
+                  const SizedBox(height: 50),
+                ],
               ),
             ),
-            
-            const SizedBox(height: 40),
-            
-            // 現在のランクカード
-            _buildCurrentRankCard(),
-            
-            const SizedBox(height: 10),
-            
-            // 次のランクカード
-            _buildNextRankCard(),
-            
-            const SizedBox(height: 30),
-            
-            // ランクについてセクション
-            _buildRankAboutSection(),
-            
-            const SizedBox(height: 20),
-            
-            // ランク一覧
-            _buildRankList(),
-            
-            const SizedBox(height: 20),
-            
-            // ランクを上げるにはセクション
-            _buildHowToRankUpSection(),
-            
-            const SizedBox(height: 50),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildCurrentRankCard() {
+  // 現在のランクセクション
+  Widget _buildCurrentRankSection() {
     return Container(
-      width: 300,
-      height: 140,
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E88E5), Color(0xFF42A5F5)],
+        gradient: LinearGradient(
+          colors: _getRankGradient(currentRank),
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E88E5).withOpacity(0.3),
+            color: _getRankColor(currentRank).withOpacity(0.3),
             spreadRadius: 2,
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        margin: const EdgeInsets.all(3),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+      child: Column(
+        children: [
+          Row(
             children: [
-              // ヘッダー部分
-              Row(
-                children: [
-                  Container(
-                    width: 35,
-                    height: 35,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E88E5), Color(0xFF42A5F5)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 20,
-                      color: Colors.white,
-                    ),
+              Icon(
+                Icons.emoji_events,
+                color: Colors.white,
+                size: 30,
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  '現在のランク',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '金子広樹さんの現在のランク',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // 現在のランク名
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(color: Colors.white.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  currentRank,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Icon(
+                  Icons.emoji_events,
+                  color: Colors.yellow,
+                  size: 30,
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 15),
+          
+          // 現在のパラメータ
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildParameterCard(
+                'ゴールドスタンプ',
+                '$currentGoldStamps',
+                '個',
+                'assets/images/gold_coin_icon.png',
+                Colors.amber,
+              ),
+              _buildParameterCard(
+                '総支払額',
+                '${(currentPaid / 1000).toStringAsFixed(1)}',
+                '千円',
+                Icons.monetization_on,
+                Colors.green,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 次のランクセクション
+  Widget _buildNextRankSection() {
+    final nextRankInfo = _getNextRankInfo(currentRank);
+    final remainingGoldStamps = nextRankInfo['requiredGoldStamps'] - currentGoldStamps;
+    final remainingPaid = nextRankInfo['requiredPaid'] - currentPaid;
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.trending_up,
+                color: _getRankColor(nextRankInfo['rank']),
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '次のランク: ${nextRankInfo['rank']}',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: _getRankColor(nextRankInfo['rank']),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // 残り必要なパラメータ
+          Text(
+            'ランクアップまでに必要なもの:',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 15),
+          
+          _buildProgressBar(
+            'ゴールドスタンプ',
+            currentGoldStamps,
+            nextRankInfo['requiredGoldStamps'],
+            remainingGoldStamps > 0 ? remainingGoldStamps : 0,
+            'assets/images/gold_coin_icon.png',
+            Colors.amber,
+          ),
+          const SizedBox(height: 12),
+          _buildProgressBar(
+            '総支払額',
+            currentPaid,
+            nextRankInfo['requiredPaid'],
+            remainingPaid > 0 ? remainingPaid : 0,
+            Icons.monetization_on,
+            Colors.green,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 全ランクリストセクション
+  Widget _buildAllRanksSection() {
+    final allRanks = _getAllRanks();
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.list_alt,
+                color: Colors.blue[700],
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                '全ランク一覧',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          ...allRanks.map((rank) => _buildRankListItem(rank)).toList(),
+        ],
+      ),
+    );
+  }
+
+  // ランクアップ方法セクション
+  Widget _buildRankUpMethodsSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.lightbulb,
+                color: Colors.orange[700],
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'ランクアップ方法',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          _buildMethodStep(
+            1,
+            '店舗でスタンプを集める',
+            'お気に入りの店舗で買い物をして、スタンプカードを完成させましょう。10個のスタンプで1個のゴールドスタンプが獲得できます。',
+            Icons.star,
+            Colors.amber,
+          ),
+          
+          _buildMethodStep(
+            2,
+            '定期的に買い物をする',
+            '毎月一定額以上の買い物をすることで、総支払額を増やしましょう。',
+            Icons.shopping_cart,
+            Colors.green,
+          ),
+          
+          _buildMethodStep(
+            3,
+            '友達を紹介する',
+            '友達にアプリを紹介すると、ボーナスポイントや特別な特典がもらえる場合があります。',
+            Icons.people,
+            Colors.blue,
+          ),
+          
+          _buildMethodStep(
+            4,
+            'クーポンを活用する',
+            '店舗が提供するクーポンを使用して、お得に買い物をしましょう。',
+            Icons.local_offer,
+            Colors.red,
+          ),
+          
+          _buildMethodStep(
+            5,
+            'レビューを書く',
+            '利用した店舗のレビューを書くことで、ポイントがもらえる場合があります。',
+            Icons.rate_review,
+            Colors.purple,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // パラメータカード
+  Widget _buildParameterCard(String title, String value, String unit, dynamic icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          icon is String
+              ? Image.asset(
+                  icon,
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(
+                      Icons.monetization_on,
+                      color: Colors.white,
+                      size: 24,
+                    );
+                  },
+                )
+              : Icon(icon as IconData, color: Colors.white, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          Text(
+            unit,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white70,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // プログレスバー
+  Widget _buildProgressBar(String title, int current, int required, int remaining, dynamic icon, Color color) {
+    final progress = current / required;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            icon is String
+                ? Image.asset(
+                    icon,
+                    width: 16,
+                    height: 16,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.monetization_on,
+                        color: color,
+                        size: 16,
+                      );
+                    },
+                  )
+                : Icon(icon as IconData, color: color, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: color,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '$current / $required',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LinearProgressIndicator(
+          value: progress > 1.0 ? 1.0 : progress,
+          backgroundColor: color.withOpacity(0.2),
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        if (remaining > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            '残り $remaining 必要',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ランクリストアイテム
+  Widget _buildRankListItem(Map<String, dynamic> rank) {
+    final isCurrentRank = rank['name'] == currentRank;
+    final isUnlocked = rank['requiredGoldStamps'] <= currentGoldStamps && 
+                       rank['requiredPaid'] <= currentPaid;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: isCurrentRank 
+            ? _getRankColor(rank['name']).withOpacity(0.1)
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: isCurrentRank 
+              ? _getRankColor(rank['name'])
+              : Colors.grey[300]!,
+          width: isCurrentRank ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // ランクアイコン
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isUnlocked ? _getRankColor(rank['name']) : Colors.grey[300],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isUnlocked ? Icons.emoji_events : Icons.lock,
+              color: isUnlocked ? Colors.white : Colors.grey[600],
+              size: 20,
+            ),
+          ),
+          
+          const SizedBox(width: 15),
+          
+          // ランク情報
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      rank['name'],
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFFF6B35),
+                        color: isUnlocked ? _getRankColor(rank['name']) : Colors.grey[600],
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 15),
-              
-              // ランク表示部分
-              Row(
-                children: [
-                  const Spacer(),
-                  // 現在のランク
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFF6B35), Color(0xFFFF8A65)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'ブルー',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.emoji_events,
-                          size: 24,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  
-                  // 矢印
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_forward,
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  
-                  // 次のランク
-                  Column(
-                    children: [
-                      const Text(
-                        '次のランク',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
+                    if (isCurrentRank) ...[
+                      const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.green.withOpacity(0.3)),
+                          color: _getRankColor(rank['name']),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'グリーン',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.emoji_events,
-                              size: 14,
-                              color: Colors.green,
-                            ),
-                          ],
+                        child: const Text(
+                          '現在',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              
-              // 還元率表示
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B35).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(15),
+                  ],
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                const SizedBox(height: 4),
+                Text(
+                  '条件: ゴールドスタンプ${rank['requiredGoldStamps']}個、総支払額${rank['requiredPaid']}円',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'ポイント還元率: ${rank['returnRate']}%',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _getRankColor(rank['name']),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+                     // 王冠アイコン
+           if (isUnlocked)
+             Icon(
+               Icons.emoji_events,
+               color: _getRankColor(rank['name']),
+               size: 24,
+             ),
+        ],
+      ),
+    );
+  }
+
+  // 方法ステップ
+  Widget _buildMethodStep(int step, String title, String description, IconData icon, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ステップ番号
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '$step',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+          
+          const SizedBox(width: 15),
+          
+          // 内容
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    const Icon(
-                      Icons.monetization_on,
-                      color: Color(0xFFFF6B35),
-                      size: 18,
-                    ),
+                    Icon(icon, color: color, size: 20),
                     const SizedBox(width: 8),
-                    const Text(
-                      'ポイント還元率：',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF1E88E5),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const Text(
-                      '0.5%',
-                      style: TextStyle(
-                        fontSize: 18,
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E88E5),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNextRankCard() {
-    return Container(
-      width: 320,
-      height: 160,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.green, Color(0xFF4CAF50)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.green.withOpacity(0.3),
-            spreadRadius: 2,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        margin: const EdgeInsets.all(3),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              // ヘッダー部分
-              Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Colors.green, Color(0xFF4CAF50)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: const Icon(
-                      Icons.trending_up,
-                      size: 18,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '次のランク（グリーン）まで',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: Colors.green.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.emoji_events,
-                          size: 16,
-                          color: Colors.green,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'グリーン',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              
-              // プログレスバー
-              _buildRankBar('フラワー', stamp, 20, Icons.local_florist, '個', Colors.pink),
-              const SizedBox(height: 12),
-              _buildRankBar('総支払い額', paid, 10000, Icons.attach_money, '円', Colors.blue),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRankBar(String title, int value, int maxValue, IconData icon, String unit, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: LinearProgressIndicator(
-              value: value / maxValue,
-              backgroundColor: color.withOpacity(0.2),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: Text(
-              '$value$unit / $maxValue$unit',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: color,
-              ),
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRankAboutSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 30),
-          child: Text(
-            'ランクについて',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 30),
-          child: Text(
-            'ブルーからブラックまで、合計10のランクがあります。ランクが上がるたびに、ポイント還元率がUPします！',
-            style: TextStyle(fontSize: 14),
-          ),
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _buildRankList() {
-    final ranks = [
-      {'name': 'ブルー', 'color': const Color(0xFF1E88E5), 'rate': 0.5, 'isCurrent': true},
-      {'name': 'グリーン', 'color': Colors.green, 'rate': 0.7, 'isCurrent': false},
-      {'name': 'イエロー', 'color': Colors.yellow, 'rate': 1.0, 'isCurrent': false},
-      {'name': 'オレンジ', 'color': Colors.orange, 'rate': 1.2, 'isCurrent': false},
-      {'name': 'レッド', 'color': Colors.red, 'rate': 1.5, 'isCurrent': false},
-      {'name': 'パープル', 'color': Colors.purple, 'rate': 1.8, 'isCurrent': false},
-      {'name': 'ブロンズ', 'color': Colors.brown, 'rate': 2.5, 'isCurrent': false},
-      {'name': 'シルバー', 'color': Colors.grey, 'rate': 3.0, 'isCurrent': false},
-      {'name': 'ゴールド', 'color': const Color(0xFFFFD700), 'rate': 5.0, 'isCurrent': false},
-      {'name': 'ブラック', 'color': Colors.black, 'rate': 10.0, 'isCurrent': false},
-    ];
-
-    return Column(
-      children: ranks.map((rank) => _buildRankRow(
-        rank['name'] as String,
-        rank['color'] as Color,
-        rank['rate'] as double,
-        rank['isCurrent'] as bool,
-      )).toList(),
-    );
-  }
-
-  Widget _buildRankRow(String colorName, Color color, double pointRate, bool isNowRank) {
-    return Container(
-      width: 320,
-      height: isNowRank ? 70 : 60,
-      margin: const EdgeInsets.only(bottom: 7),
-      decoration: BoxDecoration(
-        color: isNowRank ? const Color(0xFFFFEB3B) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isNowRank)
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '現在のランク',
-                  style: TextStyle(fontSize: 10),
-                ),
-              ),
-            Expanded(
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.emoji_events,
-                    size: 30,
-                    color: color,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      colorName,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'ポイント還元率：${pointRate.toStringAsFixed(1)}%',
-                    style: const TextStyle(fontSize: 15),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHowToRankUpSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 30),
-          child: Text(
-            'ランクを上げるには？',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 30),
-          child: Text(
-            'ランクは、フラワーと総支払額の両方が基準値に達すると、次のランクへと昇格します。',
-            style: TextStyle(fontSize: 14),
-          ),
-        ),
-        const SizedBox(height: 20),
-        
-        // フラワー獲得方法カード
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(horizontal: 30),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(40),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'フラワーを獲得するには？',
+                const SizedBox(height: 8),
+                Text(
+                  description,
                   style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 20),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.pink[100],
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.local_florist,
-                    size: 40,
-                    color: Colors.pink,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                _buildMethodView(1, 'ストコポ対応店で買い物をして、ポイントを貯める', 'ストコポ対応店で買い物をすることで、フラワーを5個獲得できます。', Icons.qr_code),
-                _buildMethodView(2, '1日1回限定ガチャを回す', 'フラワーを最大3個獲得できます。', Icons.casino),
-                _buildMethodView(3, '友達を紹介する', '友達紹介で、紹介者、友達の双方にフラワー30個もらえます。', Icons.people),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildMethodView(int method, String title, String text, IconData icon) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.green,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '方法$method',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 7),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    text,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 20),
-            Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                icon,
-                size: 35,
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
+  // ランクの色を取得
+  Color _getRankColor(String rankName) {
+    switch (rankName) {
+      case 'ブロンズ':
+        return const Color(0xFFCD7F32);
+      case 'シルバー':
+        return Colors.grey;
+      case 'ゴールド':
+        return const Color(0xFFFFD700);
+      case 'プラチナ':
+        return const Color(0xFFE5E4E2);
+      case 'ダイヤモンド':
+        return const Color(0xFFB9F2FF);
+      default:
+        return Colors.blue;
+    }
+  }
+
+  // ランクのグラデーションを取得
+  List<Color> _getRankGradient(String rankName) {
+    final baseColor = _getRankColor(rankName);
+    return [
+      baseColor,
+      baseColor.withOpacity(0.8),
+    ];
+  }
+
+  // 次のランク情報を取得
+  Map<String, dynamic> _getNextRankInfo(String currentRank) {
+    switch (currentRank) {
+      case 'ブロンズ':
+        return {
+          'rank': 'シルバー',
+          'requiredGoldStamps': 3,
+          'requiredPaid': 5000,
+        };
+      case 'シルバー':
+        return {
+          'rank': 'ゴールド',
+          'requiredGoldStamps': 7,
+          'requiredPaid': 20000,
+        };
+      case 'ゴールド':
+        return {
+          'rank': 'プラチナ',
+          'requiredGoldStamps': 15,
+          'requiredPaid': 50000,
+        };
+      case 'プラチナ':
+        return {
+          'rank': 'ダイヤモンド',
+          'requiredGoldStamps': 30,
+          'requiredPaid': 100000,
+        };
+      default:
+        return {
+          'rank': '最高ランク',
+          'requiredGoldStamps': 999,
+          'requiredPaid': 999999,
+        };
+    }
+  }
+
+  // 全ランクの情報を取得
+  List<Map<String, dynamic>> _getAllRanks() {
+    return [
+      {
+        'name': 'ブロンズ',
+        'requiredGoldStamps': 0,
+        'requiredPaid': 0,
+        'returnRate': 0.5,
+      },
+      {
+        'name': 'シルバー',
+        'requiredGoldStamps': 3,
+        'requiredPaid': 5000,
+        'returnRate': 1.0,
+      },
+      {
+        'name': 'ゴールド',
+        'requiredGoldStamps': 7,
+        'requiredPaid': 20000,
+        'returnRate': 1.5,
+      },
+      {
+        'name': 'プラチナ',
+        'requiredGoldStamps': 15,
+        'requiredPaid': 50000,
+        'returnRate': 2.0,
+      },
+      {
+        'name': 'ダイヤモンド',
+        'requiredGoldStamps': 30,
+        'requiredPaid': 100000,
+        'returnRate': 3.0,
+      },
+    ];
   }
 } 

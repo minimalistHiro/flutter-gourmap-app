@@ -11,8 +11,8 @@ class StampView extends StatefulWidget {
 
 class _StampViewState extends State<StampView> {
   int getAllStamps = 0;
-  int goldStamps = 0;
-  int normalStamps = 0;
+  int totalGoldStamps = 0;  // 全店舗のゴールドスタンプ数の合計
+  int totalNormalStamps = 0; // 全店舗の通常スタンプ数の合計
   bool _isLoading = true;
   List<Map<String, dynamic>> _storeStamps = [];
 
@@ -91,16 +91,27 @@ class _StampViewState extends State<StampView> {
         // スタンプ数でソート（多い順）
         storeStamps.sort((a, b) => (b['stamps'] as int).compareTo(a['stamps'] as int));
         
-        // ゴールドスタンプと通常スタンプの数を計算
-        goldStamps = storeStamps.where((store) => store['isGoldStamp'] == true).length;
-        normalStamps = storeStamps.where((store) => store['isGoldStamp'] == false).length;
+        // 各店舗のゴールドスタンプ数と通常スタンプ数を計算
+        int totalGoldStampsCount = 0;
+        int totalNormalStampsCount = 0;
+        
+        for (final store in storeStamps) {
+          final stampCount = store['stamps'] as int;
+          if (stampCount >= 10) {
+            totalGoldStampsCount += 1; // 10個以上でゴールドスタンプ
+          } else {
+            totalNormalStampsCount += stampCount; // 通常スタンプ数
+          }
+        }
         
         // 総スタンプ数を設定
         getAllStamps = totalStamps;
+        totalGoldStamps = totalGoldStampsCount;
+        totalNormalStamps = totalNormalStampsCount;
         
         print('総スタンプ数: $totalStamps');
-        print('ゴールドスタンプ店舗数: $goldStamps');
-        print('通常スタンプ店舗数: $normalStamps');
+        print('ゴールドスタンプ数: $totalGoldStamps');
+        print('通常スタンプ数: $totalNormalStamps');
         
         setState(() {
           _storeStamps = storeStamps;
@@ -222,10 +233,36 @@ class _StampViewState extends State<StampView> {
                       children: [
                         Row(
                           children: [
-                            Icon(
-                              Icons.star,
-                              color: Colors.amber,
-                              size: 20,
+                            ClipOval(
+                              child: Image.asset(
+                                'assets/images/gold_coin_icon.png',
+                                width: 20,
+                                height: 20,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // 画像が読み込めない場合のフォールバック
+                                  return Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                                      ),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 1),
+                                    ),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.star,
+                                        color: Colors.white,
+                                        size: 12,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                             const SizedBox(width: 8),
                             const Text(
@@ -253,7 +290,7 @@ class _StampViewState extends State<StampView> {
                               Column(
                                 children: [
                                   Text(
-                                    '$normalStamps',
+                                    '$totalNormalStamps',
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -277,7 +314,7 @@ class _StampViewState extends State<StampView> {
                               Column(
                                 children: [
                                   Text(
-                                    '$goldStamps',
+                                    '$totalGoldStamps',
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -371,12 +408,6 @@ class _StampViewState extends State<StampView> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.star,
-                color: Colors.amber,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   storeName,
@@ -417,53 +448,80 @@ class _StampViewState extends State<StampView> {
               
               return Container(
                 decoration: BoxDecoration(
-                  color: isCollected 
-                      ? (isGoldStamp ? Colors.amber : Colors.blue)
-                      : (isGoldStamp ? Colors.amber.withOpacity(0.3) : Colors.grey[300]),
                   shape: BoxShape.circle,
                   border: isGoldStamp && !isCollected 
                       ? Border.all(color: Colors.amber, width: 2)
                       : null,
-                  boxShadow: isCollected && isGoldStamp ? [
-                    BoxShadow(
-                      color: Colors.amber.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ] : null,
                 ),
-                child: Stack(
-                  children: [
-                    if (isCollected)
-                      Icon(
-                        isGoldStamp ? Icons.star : Icons.check,
-                        color: Colors.white,
-                        size: isGoldStamp ? 24 : 20,
-                      ),
-                    // 未収集のゴールドスタンプ位置に説明文を表示
-                    if (isGoldStamp && !isCollected)
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.star,
-                              color: Colors.amber[600],
-                              size: 16,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'ゴールド',
-                              style: TextStyle(
-                                color: Colors.amber[700],
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
+                child: ClipOval(
+                  child: isCollected
+                      ? Image.asset(
+                          isGoldStamp 
+                              ? 'assets/images/gold_coin_icon.png'
+                              : 'assets/images/silver_coin_icon.png',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            // 画像が読み込めない場合のフォールバック
+                            return Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.transparent,
+                                shape: BoxShape.circle,
                               ),
-                            ),
-                          ],
+                              child: Center(
+                                child: Icon(
+                                  isGoldStamp ? Icons.star : Icons.check,
+                                  color: Colors.grey[600],
+                                  size: 24,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            shape: BoxShape.circle,
+                          ),
+                          child: isGoldStamp
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      ClipOval(
+                                        child: Image.asset(
+                                          'assets/images/gold_coin_icon.png',
+                                          width: 20,
+                                          height: 20,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Icon(
+                                              Icons.star,
+                                              color: Colors.amber[700],
+                                              size: 20,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'ゴールドスタンプ',
+                                        style: TextStyle(
+                                          color: Colors.amber[700],
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : null,
                         ),
-                      ),
-                  ],
                 ),
               );
             },

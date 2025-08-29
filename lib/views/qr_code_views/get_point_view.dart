@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GetPointView extends StatefulWidget {
   final Function(bool) onGetPointViewChanged;
@@ -17,11 +19,13 @@ class GetPointView extends StatefulWidget {
 
 class _GetPointViewState extends State<GetPointView> with TickerProviderStateMixin {
   int currentTab = 0; // 0: Page1, 1: Page2
-  int stampCount = 4;
-  int flower = 7;
-  int paid = 4000;
+  int stampCount = 0;
+  int flower = 0;
+  int paid = 0;
   int getFlower = 3;
   int getPaid = 3000;
+  
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   late AnimationController _flowerAnimationController;
   late AnimationController _paidAnimationController;
@@ -43,7 +47,56 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
       vsync: this,
     );
     
-    // アニメーションの設定
+    // ユーザーデータを読み込み
+    _loadUserData();
+  }
+  
+  // ユーザーデータを読み込み
+  Future<void> _loadUserData() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // ユーザー情報を取得
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          setState(() {
+            flower = (userData['goldStamps'] ?? 0) as int;
+            paid = (userData['paid'] ?? 0) as int;
+          });
+        }
+        
+        // 全店舗のスタンプ数を取得
+        final userStampsSnapshot = await _firestore
+            .collection('user_stamps')
+            .doc(user.uid)
+            .collection('stores')
+            .get();
+        
+        int totalStamps = 0;
+        for (final storeDoc in userStampsSnapshot.docs) {
+          final storeData = storeDoc.data();
+          totalStamps += (storeData['stamps'] ?? 0) as int;
+        }
+        
+        setState(() {
+          stampCount = totalStamps;
+        });
+        
+        // アニメーションの設定と開始
+        _setupAnimations();
+        _startAnimations();
+      }
+    } catch (e) {
+      print('ユーザーデータ読み込みエラー: $e');
+      // エラー時はデフォルト値でアニメーション開始
+      _setupAnimations();
+      _startAnimations();
+    }
+  }
+  
+  // アニメーションの設定
+  void _setupAnimations() {
     _flowerAnimation = IntTween(
       begin: flower,
       end: flower + getFlower,
@@ -59,9 +112,6 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
       parent: _paidAnimationController,
       curve: Curves.easeOut,
     ));
-    
-    // アニメーション開始
-    _startAnimations();
   }
 
   @override
@@ -505,20 +555,47 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
                   bool isCollected = index < stampCount;
                   return Container(
                     decoration: BoxDecoration(
-                      color: isCollected ? Colors.orange : Colors.grey[200],
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: isCollected ? Colors.orange : Colors.grey,
                         width: 2,
                       ),
                     ),
-                    child: isCollected
-                        ? const Icon(
-                            Icons.star,
-                            color: Colors.white,
-                            size: 20,
-                          )
-                        : null,
+                    child: ClipOval(
+                      child: isCollected
+                          ? Image.asset(
+                              'assets/images/gold_coin_icon.png',
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                // 画像が読み込めない場合のフォールバック
+                                return Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.transparent,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.star,
+                                      color: Colors.grey[600],
+                                      size: 24,
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                          : Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                    ),
                   );
                 },
               ),

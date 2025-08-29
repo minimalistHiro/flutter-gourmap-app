@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/firebase_auth_service.dart';
 import 'profile_edit_view.dart';
 import 'update_username_view.dart';
+
 import '../notification_list_view.dart';
 import 'privacy_settings_view.dart';
 import 'language_settings_view.dart';
@@ -456,15 +457,17 @@ class _AccountViewState extends State<AccountView> {
                     title: 'ポイント',
                     value: '$points pt',
                     color: Colors.orange,
+                    imagePath: 'assets/images/point_icon.png',
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: _buildInfoCard(
-                                          icon: Icons.star,
-                                          title: 'ゴールドスタンプ',
+                    icon: Icons.star,
+                    title: 'ゴールドスタンプ',
                     value: '$goldStamps 個',
-                                          color: Colors.amber,
+                    color: Colors.amber,
+                    imagePath: 'assets/images/gold_coin_icon.png',
                   ),
                 ),
 
@@ -481,6 +484,7 @@ class _AccountViewState extends State<AccountView> {
     required String title,
     required String value,
     required Color color,
+    String? imagePath,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -491,7 +495,19 @@ class _AccountViewState extends State<AccountView> {
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 24),
+          imagePath != null
+              ? ClipOval(
+                  child: Image.asset(
+                    imagePath,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(icon, color: color, size: 24);
+                    },
+                  ),
+                )
+              : Icon(icon, color: color, size: 24),
           const SizedBox(height: 8),
           Text(
             title,
@@ -542,6 +558,7 @@ class _AccountViewState extends State<AccountView> {
                );
              },
            ),
+
           _buildMenuItem(
             icon: Icons.lock,
             title: 'パスワードを変更',

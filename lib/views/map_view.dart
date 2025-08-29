@@ -193,29 +193,79 @@ class _MapViewState extends State<MapView> {
     }
   }
   
+  // カスタムコインアイコンを作成
+  Widget _buildCustomCoinIcon(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.amber.withOpacity(0.4),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: Image.asset(
+          'assets/images/gold_coin_icon.png',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // 画像が読み込めない場合のフォールバック
+            return Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                ),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.star,
+                  color: Colors.white,
+                  size: size * 0.6,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   // 花アイコンのマーカーを作成
   Widget _buildFlowerMarker(Map<String, dynamic> store, bool isExpanded) {
     final String flowerType = store['flowerType'];
     final bool isVisited = store['isVisited'];
     
     // 花の種類に応じてアイコンと色を決定
-    IconData flowerIcon;
+    Widget flowerIcon;
     Color flowerColor;
     String flowerLabel;
     
     switch (flowerType) {
       case 'gold':
-        flowerIcon = Icons.star;  // ゴールドスタンプ獲得店舗（星）
+        flowerIcon = _buildCustomCoinIcon(isExpanded ? 35 : 25);  // ゴールドスタンプ獲得店舗（カスタムコインアイコン）
         flowerColor = Colors.amber;
-        flowerLabel = 'ゴールド';
+        flowerLabel = 'ゴールドスタンプ';
         break;
       case 'unvisited':
-        flowerIcon = Icons.radio_button_unchecked;  // 未訪問店舗（グレーの丸）
+        flowerIcon = Icon(Icons.radio_button_unchecked, color: Colors.white, size: isExpanded ? 35 : 25);  // 未訪問店舗（グレーの丸）
         flowerColor = Colors.grey;
         flowerLabel = '未訪問';
         break;
       default:
-        flowerIcon = Icons.help_outline;
+        flowerIcon = Icon(Icons.help_outline, color: Colors.white, size: isExpanded ? 35 : 25);
         flowerColor = Colors.grey;
         flowerLabel = '不明';
     }
@@ -238,27 +288,23 @@ class _MapViewState extends State<MapView> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
+              child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
             flowerIcon,
-            color: Colors.white,
-            size: isExpanded ? 35 : 25,
-          ),
-          if (isExpanded) ...[
-            const SizedBox(height: 2),
-            Text(
-              flowerLabel,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
+            if (isExpanded) ...[
+              const SizedBox(height: 2),
+              Text(
+                flowerLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
+            ],
           ],
-        ],
-      ),
+        ),
     );
   }
 
@@ -505,14 +551,40 @@ class _MapViewState extends State<MapView> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.star,
-                              color: Colors.amber[600],
-                              size: 14,
+                            ClipOval(
+                              child: Image.asset(
+                                'assets/images/gold_coin_icon.png',
+                                width: 14,
+                                height: 14,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // 画像が読み込めない場合のフォールバック
+                                  return Container(
+                                    width: 14,
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                                      ),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 1),
+                                    ),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.star,
+                                        color: Colors.white,
+                                        size: 8,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'ゴールド: $goldStamps/1',
+                              'ゴールドスタンプ: $goldStamps/1',
                               style: TextStyle(
                                 color: Colors.amber[700],
                                 fontSize: 11,

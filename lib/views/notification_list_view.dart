@@ -22,12 +22,34 @@ class _NotificationListViewState extends State<NotificationListView> {
   
   // 既読状態を管理
   Set<String> _readNotifications = {};
+  
+  // ユーザーのオーナー状態
+  bool _isOwner = false;
 
   @override
   void initState() {
     super.initState();
+    _loadUserStatus();
     _loadNotifications();
     _loadReadStatus();
+  }
+
+  // ユーザーのオーナー状態を確認
+  Future<void> _loadUserStatus() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final doc = await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>;
+          setState(() {
+            _isOwner = data['isOwner'] ?? false;
+          });
+        }
+      }
+    } catch (e) {
+      print('ユーザー状態の読み込みに失敗しました: $e');
+    }
   }
 
   // 既読状態を読み込む
@@ -120,8 +142,16 @@ class _NotificationListViewState extends State<NotificationListView> {
         // アクティブで公開済みのお知らせのみをフィルタリング
         final isActive = data['isActive'] ?? false;
         final isPublished = data['isPublished'] ?? false;
+        final isOwnerOnly = data['isOwnerOnly'] ?? false;
+        final type = data['type'] ?? 'notification';
         
-        if (isActive && isPublished) {
+        // オーナー専用通知の表示制御
+        bool shouldShow = isActive && isPublished;
+        if (isOwnerOnly && !_isOwner) {
+          shouldShow = false;
+        }
+        
+        if (shouldShow) {
           notifications.add({
             'id': doc.id,
             'title': data['title'] ?? 'タイトルなし',
@@ -132,6 +162,11 @@ class _NotificationListViewState extends State<NotificationListView> {
             'publishedAt': data['publishedAt'],
             'readCount': data['readCount'] ?? 0,
             'totalViews': data['totalViews'] ?? 0,
+            'type': type,
+            'isOwnerOnly': isOwnerOnly,
+            'userId': data['userId'] ?? '',
+            'username': data['username'] ?? '',
+            'userEmail': data['userEmail'] ?? '',
           });
         }
       }
@@ -165,12 +200,35 @@ class _NotificationListViewState extends State<NotificationListView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'お知らせ',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'お知らせ',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (_isOwner) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B35),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'オーナー',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
@@ -295,12 +353,21 @@ class _NotificationListViewState extends State<NotificationListView> {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: Colors.grey[300],
+                    color: notification['type'] == 'feedback' 
+                        ? const Color(0xFFFF6B35).withOpacity(0.1)
+                        : Colors.grey[300],
                     shape: BoxShape.circle,
+                    border: notification['type'] == 'feedback'
+                        ? Border.all(color: const Color(0xFFFF6B35), width: 2)
+                        : null,
                   ),
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.grey,
+                  child: Icon(
+                    notification['type'] == 'feedback' 
+                        ? Icons.feedback
+                        : Icons.notifications,
+                    color: notification['type'] == 'feedback'
+                        ? const Color(0xFFFF6B35)
+                        : Colors.grey,
                     size: 24,
                   ),
                 ),
@@ -365,13 +432,35 @@ class _NotificationListViewState extends State<NotificationListView> {
                     ],
                   ),
                   const SizedBox(height: 4),
+                  // フィードバックの場合は送信者情報を表示
+                  if (notification['type'] == 'feedback') ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF6B35).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFFFF6B35).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Text(
+                        '送信者: ${notification['username']} (${notification['userEmail']})',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFFFF6B35),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   Text(
                     notification['content'],
                     style: const TextStyle(
                       fontSize: 11,
                       color: Colors.grey,
                     ),
-                    maxLines: 2,
+                    maxLines: notification['type'] == 'feedback' ? 3 : 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),

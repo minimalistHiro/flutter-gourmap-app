@@ -6,7 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+
+import '../../services/referral_service.dart';
 
 class EmailSignUpView extends StatefulWidget {
   const EmailSignUpView({super.key});
@@ -29,11 +30,14 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
   String age = '';
   String address = '';
   String gender = ''; // 性別を追加
+  String referralCode = ''; // 紹介コードを追加
+  bool _isValidatingReferralCode = false;
+  String? _referralCodeValidationMessage;
   
   // 画像関連の状態変数
   File? _selectedImageFile;
   Uint8List? _selectedImageBytes;
-  String? _selectedImageUrl;
+
   bool _isImageLoading = false;
   
   // TextEditingControllerを適切に管理
@@ -41,9 +45,13 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
   late TextEditingController _passwordController;
   late TextEditingController _password2Controller;
   late TextEditingController _usernameController;
+  late TextEditingController _referralCodeController;
   
   // ImagePicker
   final ImagePicker _picker = ImagePicker();
+  
+  // ReferralService
+  final ReferralService _referralService = ReferralService();
   
   final List<String> ages = [
     '10代', '20代', '30代', '40代', '50代', '60代', '70代以上'
@@ -79,6 +87,7 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
     _passwordController = TextEditingController();
     _password2Controller = TextEditingController();
     _usernameController = TextEditingController();
+    _referralCodeController = TextEditingController();
   }
 
   @override
@@ -88,7 +97,54 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
     _passwordController.dispose();
     _password2Controller.dispose();
     _usernameController.dispose();
+    _referralCodeController.dispose();
     super.dispose();
+  }
+
+  // 紹介コードをリアルタイムで検証
+  Future<void> _validateReferralCode(String code) async {
+    if (code.trim().isEmpty) {
+      setState(() {
+        _referralCodeValidationMessage = null;
+        _isValidatingReferralCode = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isValidatingReferralCode = true;
+      _referralCodeValidationMessage = null;
+    });
+
+    try {
+      // 500ms待機してAPIコールを制限
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // まだ同じコードが入力されているかチェック
+      if (code.trim() != referralCode.trim()) {
+        return; // ユーザーが入力を変更した場合は検証をキャンセル
+      }
+
+      final result = await _referralService.validateReferralCode(code.trim());
+      
+      if (mounted && code.trim() == referralCode.trim()) {
+        setState(() {
+          _isValidatingReferralCode = false;
+          if (result != null) {
+            _referralCodeValidationMessage = '✓ ${result['username']}さんの紹介コードです';
+          } else {
+            _referralCodeValidationMessage = '✗ 無効な紹介コードです';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted && code.trim() == referralCode.trim()) {
+        setState(() {
+          _isValidatingReferralCode = false;
+          _referralCodeValidationMessage = '✗ 検証に失敗しました';
+        });
+      }
+    }
   }
 
   // 画像選択メソッド
@@ -118,7 +174,7 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
           setState(() {
             _selectedImageBytes = bytes;
             _selectedImageFile = null;
-            _selectedImageUrl = null;
+
           });
           
           print('Web画像設定完了: _selectedImageBytes = ${_selectedImageBytes?.length} bytes');
@@ -132,7 +188,7 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
           setState(() {
             _selectedImageFile = file;
             _selectedImageBytes = bytes;
-            _selectedImageUrl = null;
+
           });
           
           print('モバイル画像設定完了: _selectedImageBytes = ${_selectedImageBytes?.length} bytes');
@@ -276,9 +332,42 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
             'goldStamps': 0, // ゴールドスタンプ数
             'paid': 0, // 総支払額
             'readNotifications': [], // 既読通知リスト
+            'accountType': 'email', // アカウント作成方法
+            'isOwner': false, // オーナーフラグ
           });
           
           print('Firestore ユーザー情報保存成功 - profileImageUrl: $profileImageUrl');
+          
+          // 紹介コード処理
+          if (referralCode.trim().isNotEmpty) {
+            try {
+              print('紹介コード処理開始: $referralCode');
+              await _referralService.processReferral(user.uid, referralCode.trim());
+              print('紹介コード処理成功');
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('紹介コードが適用され、1000ポイントを獲得しました！'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            } catch (referralError) {
+              print('紹介コード処理エラー: $referralError');
+              // 紹介エラーは致命的ではないので、警告メッセージのみ
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('紹介コードの処理に失敗しました: $referralError'),
+                    backgroundColor: Colors.orange,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+            }
+          }
 
           // 成功メッセージ
           if (mounted) {
@@ -651,6 +740,11 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
             
             const SizedBox(height: 20),
             
+            // 紹介コード（任意）
+            _buildReferralCodeField(),
+            
+            const SizedBox(height: 20),
+            
             // プロフィール画像
             const Text(
               'プロフィール画像（任意）',
@@ -706,7 +800,7 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
                   setState(() {
                     _selectedImageFile = null;
                     _selectedImageBytes = null;
-                    _selectedImageUrl = null;
+        
                   });
                 },
                 icon: const Icon(Icons.delete, size: 16),
@@ -843,6 +937,8 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
     required TextEditingController controller,
     required Function(String) onChanged,
     TextInputType? keyboardType,
+    int? maxLength,
+    bool isOptional = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -859,12 +955,24 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
           controller: controller,
           onChanged: onChanged,
           keyboardType: keyboardType,
+          maxLength: maxLength,
           decoration: InputDecoration(
             hintText: hint,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            suffixIcon: isOptional 
+                ? const Icon(Icons.info_outline, size: 16, color: Colors.grey)
+                : null,
+            helperText: isOptional 
+                ? '双方に1000ポイント獲得のチャンス！' 
+                : null,
+            helperStyle: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFFFF6B35),
+            ),
+            counterText: maxLength != null ? '' : null, // 文字数カウンターを非表示
           ),
         ),
       ],
@@ -904,6 +1012,83 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
               ),
               onPressed: onTogglePassword,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReferralCodeField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '友達紹介コード（任意）',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _referralCodeController,
+          onChanged: (value) {
+            setState(() => referralCode = value);
+            _validateReferralCode(value);
+          },
+          maxLength: 8,
+          textCapitalization: TextCapitalization.characters,
+          decoration: InputDecoration(
+            hintText: '友達から教えてもらったコードを入力',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            suffixIcon: _isValidatingReferralCode
+                ? const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFFF6B35),
+                      ),
+                    ),
+                  )
+                : _referralCodeValidationMessage != null
+                    ? Icon(
+                        _referralCodeValidationMessage!.startsWith('✓')
+                            ? Icons.check_circle
+                            : Icons.error,
+                        color: _referralCodeValidationMessage!.startsWith('✓')
+                            ? Colors.green
+                            : Colors.red,
+                      )
+                    : const Icon(Icons.info_outline, size: 16, color: Colors.grey),
+            helperText: _referralCodeValidationMessage ?? '双方に1000ポイント獲得のチャンス！',
+            helperStyle: TextStyle(
+              fontSize: 12,
+              color: _referralCodeValidationMessage != null
+                  ? (_referralCodeValidationMessage!.startsWith('✓')
+                      ? Colors.green
+                      : Colors.red)
+                  : const Color(0xFFFF6B35),
+            ),
+            counterText: '', // 文字数カウンターを非表示
           ),
         ),
       ],

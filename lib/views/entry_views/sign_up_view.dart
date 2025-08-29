@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'email_sign_up_view.dart';
+import '../../services/firebase_auth_service.dart';
+import '../content_view.dart';
 
 class SignUpView extends StatefulWidget {
   const SignUpView({super.key});
@@ -9,6 +11,117 @@ class SignUpView extends StatefulWidget {
 }
 
 class _SignUpViewState extends State<SignUpView> {
+  bool isLoading = false;
+  final FirebaseAuthService _authService = FirebaseAuthService();
+
+  // Googleサインアップ
+  Future<void> _signUpWithGoogle() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userCredential = await _authService.signInWithGoogle();
+      
+      if (userCredential != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Googleアカウントで登録しました'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const ContentView()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(
+          'Google登録エラー',
+          'Googleアカウントでの登録に失敗しました。\n\nエラー詳細: $e\n\nしばらく時間をおいてから再度お試しください。'
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Apple Sign Up
+  Future<void> _signUpWithApple() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userCredential = await _authService.signInWithApple();
+      
+      if (userCredential != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Apple IDで登録しました'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const ContentView()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(
+          'Apple ID登録エラー',
+          'Apple IDでの登録に失敗しました。\n\nエラー詳細: $e\n\nしばらく時間をおいてから再度お試しください。'
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  // エラーダイアログを表示
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'OK',
+                style: TextStyle(
+                  color: Colors.blue,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,17 +158,12 @@ class _SignUpViewState extends State<SignUpView> {
             
             const SizedBox(height: 40),
             
-            // Apple登録ボタン
+            // Apple登録ボタン（Web環境では無効）
             _buildSignUpButton(
-              title: 'Appleで登録',
+              title: 'Appleで登録（準備中）',
               icon: Icons.apple,
-              backgroundColor: Colors.black,
-              onTap: () {
-                // Apple登録処理（後で実装）
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Appleで登録')),
-                );
-              },
+              backgroundColor: Colors.grey,
+              onTap: null, // Web環境では無効化
             ),
             
             const SizedBox(height: 20),
@@ -63,14 +171,9 @@ class _SignUpViewState extends State<SignUpView> {
             // Google登録ボタン
             _buildSignUpButton(
               title: 'Googleで登録',
-              icon: Icons.g_mobiledata,
+              icon: Icons.account_circle,
               backgroundColor: Colors.red,
-              onTap: () {
-                // Google登録処理（後で実装）
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Googleで登録')),
-                );
-              },
+              onTap: isLoading ? null : _signUpWithGoogle,
             ),
             
             const SizedBox(height: 20),
@@ -89,7 +192,19 @@ class _SignUpViewState extends State<SignUpView> {
               },
             ),
             
-            const SizedBox(height: 80),
+            const SizedBox(height: 20),
+            
+            // 注意書き
+            Text(
+              '※ソーシャル登録は現在準備中です\nメールアドレスでの登録をお勧めします',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            
+            const SizedBox(height: 60),
           ],
         ),
       ),
@@ -100,7 +215,7 @@ class _SignUpViewState extends State<SignUpView> {
     required String title,
     required IconData icon,
     required Color backgroundColor,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -108,17 +223,27 @@ class _SignUpViewState extends State<SignUpView> {
         width: double.infinity,
         height: 50,
         decoration: BoxDecoration(
-          color: backgroundColor,
+          color: onTap == null ? backgroundColor.withOpacity(0.5) : backgroundColor,
           borderRadius: BorderRadius.circular(25),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              color: Colors.white,
-              size: 24,
-            ),
+            if (isLoading && (title.contains('Apple') || title.contains('Google')))
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            else
+              Icon(
+                icon,
+                color: Colors.white,
+                size: 24,
+              ),
             const SizedBox(width: 10),
             Text(
               title,

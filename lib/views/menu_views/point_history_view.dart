@@ -66,17 +66,16 @@ class _PointHistoryViewState extends State<PointHistoryView> {
   // ポイント履歴を読み込む
   Future<void> _loadPointHistory(String userId) async {
     try {
+      final List<Map<String, dynamic>> history = [];
+      
       // user_stamps コレクションからポイント履歴を取得
-      final querySnapshot = await _firestore
+      final stampsSnapshot = await _firestore
           .collection('user_stamps')
           .where('userId', isEqualTo: userId)
           .where('points', isGreaterThan: 0)
-          .orderBy('points', descending: true)
           .get();
-
-      final List<Map<String, dynamic>> history = [];
       
-      for (final doc in querySnapshot.docs) {
+      for (final doc in stampsSnapshot.docs) {
         final data = doc.data();
         final storeId = data['storeId'];
         
@@ -95,6 +94,26 @@ class _PointHistoryViewState extends State<PointHistoryView> {
             });
           }
         }
+      }
+
+      // ルーレット履歴を取得
+      final rouletteSnapshot = await _firestore
+          .collection('roulette_history')
+          .where('userId', isEqualTo: userId)
+          .where('points', isGreaterThan: 0) // ポイントを獲得した場合のみ
+          .get();
+
+      for (final doc in rouletteSnapshot.docs) {
+        final data = doc.data();
+        history.add({
+          'id': doc.id,
+          'storeName': 'ルーレット',
+          'storeId': null,
+          'points': data['points'] ?? 0,
+          'timestamp': data['timestamp'] ?? Timestamp.now(),
+          'type': 'ルーレット',
+          'prize': data['prize'] ?? '',
+        });
       }
 
       // 日付でソート（新しい順）
@@ -300,6 +319,10 @@ class _PointHistoryViewState extends State<PointHistoryView> {
         return Colors.green;
       case 'キャンペーン':
         return Colors.orange;
+      case 'ルーレット':
+        return Colors.purple;
+      case 'スロット':
+        return Colors.deepPurple;
       default:
         return Colors.red;
     }
@@ -330,9 +353,9 @@ class _PointHistoryViewState extends State<PointHistoryView> {
               color: Colors.grey[300],
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.store,
-              color: Colors.grey,
+            child: Icon(
+              (storeName == 'ルーレット' || storeName == 'スロット') ? Icons.casino : Icons.store,
+              color: (storeName == 'ルーレット' || storeName == 'スロット') ? Colors.purple : Colors.grey,
               size: 24,
             ),
           ),

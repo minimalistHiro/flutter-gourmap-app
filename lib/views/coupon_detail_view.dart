@@ -273,7 +273,21 @@ class _CouponDetailViewState extends State<CouponDetailView> {
     
     try {
       final date = timestamp.toDate();
-      return '${date.year}年${date.month}月${date.day}日 ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}まで';
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      final couponDate = DateTime(date.year, date.month, date.day);
+      
+      String dateText;
+      if (couponDate.isAtSameMomentAs(today)) {
+        dateText = '今日';
+      } else if (couponDate.isAtSameMomentAs(tomorrow)) {
+        dateText = '明日';
+      } else {
+        dateText = '${date.month}月${date.day}日';
+      }
+      
+      return '$dateText ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}まで';
     } catch (e) {
       return '期限不明';
     }
