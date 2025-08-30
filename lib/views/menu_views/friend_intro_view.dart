@@ -364,10 +364,10 @@ GourMapに招待します！
           Row(
             children: [
               Expanded(
-                child: _buildStatItem(
+                child: _buildStatItemWithImage(
                   '紹介した友達',
                   '${_referralStats['referralCount']}人',
-                  Icons.people,
+                  'assets/images/friend_intro_icon.png',
                   Colors.blue,
                 ),
               ),
@@ -377,10 +377,10 @@ GourMapに招待します！
                 color: Colors.grey[300],
               ),
               Expanded(
-                child: _buildStatItem(
+                child: _buildStatItemWithImage(
                   '獲得ポイント',
                   '${_referralStats['totalPointsEarned']}pt',
-                  Icons.monetization_on,
+                  'assets/images/point_icon.png',
                   const Color(0xFFFF6B35),
                 ),
               ),
@@ -396,6 +396,44 @@ GourMapに招待します！
     return Column(
       children: [
         Icon(icon, color: color, size: 24),
+        const SizedBox(height: 5),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.grey,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 統計アイテム（画像版）
+  Widget _buildStatItemWithImage(String label, String value, String imagePath, Color color) {
+    return Column(
+      children: [
+        Image.asset(
+          imagePath,
+          width: 24,
+          height: 24,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // 画像が読み込めない場合のフォールバック
+            return Icon(
+              label == '紹介した友達' ? Icons.people : Icons.monetization_on,
+              color: color,
+              size: 24,
+            );
+          },
+        ),
         const SizedBox(height: 5),
         Text(
           value,

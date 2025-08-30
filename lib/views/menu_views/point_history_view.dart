@@ -68,59 +68,89 @@ class _PointHistoryViewState extends State<PointHistoryView> {
     try {
       final List<Map<String, dynamic>> history = [];
       
-      // user_stamps コレクションからポイント履歴を取得
-      final stampsSnapshot = await _firestore
-          .collection('user_stamps')
-          .where('userId', isEqualTo: userId)
-          .where('points', isGreaterThan: 0)
-          .get();
+      // point_history コレクションからポイント履歴を取得（獲得・使用両方）
+      QuerySnapshot pointHistorySnapshot;
+      try {
+        // まず複合インデックスを使用したクエリを試す
+        pointHistorySnapshot = await _firestore
+            .collection('point_history')
+            .where('userId', isEqualTo: userId)
+            .orderBy('timestamp', descending: true)
+            .get();
+      } catch (indexError) {
+        print('複合インデックスクエリでエラー、単純クエリにフォールバック: $indexError');
+        // インデックスエラーの場合、orderByなしでフォールバック
+        pointHistorySnapshot = await _firestore
+            .collection('point_history')
+            .where('userId', isEqualTo: userId)
+            .get();
+      }
       
-      for (final doc in stampsSnapshot.docs) {
-        final data = doc.data();
-        final storeId = data['storeId'];
+      for (final doc in pointHistorySnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data == null) continue;
         
-        // 店舗情報を取得
-        if (storeId != null) {
-          final storeDoc = await _firestore.collection('stores').doc(storeId).get();
-          if (storeDoc.exists) {
-            final storeData = storeDoc.data()!;
+        final storeId = data['storeId'];
+        final type = data['type'] ?? '支払い';
+        final source = data['source'] ?? 'unknown';
+        
+        final transactionType = data['transactionType'] ?? 'earn';
+        final points = data['points'] ?? 0;
+        
+        // スロットやルーレットなど、店舗IDがない場合
+        if (storeId == null || source == 'slot_machine' || source == 'roulette') {
+          history.add({
+            'id': doc.id,
+            'storeName': data['storeName'] ?? _getSourceDisplayName(source),
+            'storeId': null,
+            'points': points,
+            'timestamp': data['timestamp'] ?? data['createdAt'] ?? Timestamp.now(),
+            'type': type,
+            'description': data['description'] ?? '',
+            'source': source,
+            'transactionType': transactionType,
+          });
+        } else {
+          // 一般的な店舗の場合は店舗情報を取得
+          try {
+            final storeDoc = await _firestore.collection('stores').doc(storeId).get();
+            if (storeDoc.exists) {
+              final storeData = storeDoc.data()!;
+              history.add({
+                'id': doc.id,
+                'storeName': storeData['name'] ?? '店舗名なし',
+                'storeId': storeId,
+                'points': points,
+                'timestamp': data['timestamp'] ?? data['createdAt'] ?? Timestamp.now(),
+                'type': type,
+                'description': data['description'] ?? '',
+                'source': source,
+                'transactionType': transactionType,
+              });
+            }
+          } catch (e) {
+            print('店舗情報の取得に失敗: $e');
+            // 店舗情報の取得に失敗した場合もエントリを追加
             history.add({
               'id': doc.id,
-              'storeName': storeData['name'] ?? '店舗名なし',
+              'storeName': data['storeName'] ?? '店舗名なし',
               'storeId': storeId,
-              'points': data['points'] ?? 0,
-              'timestamp': data['lastVisited'] ?? Timestamp.now(),
-              'type': data['type'] ?? '支払い', // 支払い、ボーナス、特典など
+              'points': points,
+              'timestamp': data['timestamp'] ?? data['createdAt'] ?? Timestamp.now(),
+              'type': type,
+              'description': data['description'] ?? '',
+              'source': source,
+              'transactionType': transactionType,
             });
           }
         }
       }
 
-      // ルーレット履歴を取得
-      final rouletteSnapshot = await _firestore
-          .collection('roulette_history')
-          .where('userId', isEqualTo: userId)
-          .where('points', isGreaterThan: 0) // ポイントを獲得した場合のみ
-          .get();
-
-      for (final doc in rouletteSnapshot.docs) {
-        final data = doc.data();
-        history.add({
-          'id': doc.id,
-          'storeName': 'ルーレット',
-          'storeId': null,
-          'points': data['points'] ?? 0,
-          'timestamp': data['timestamp'] ?? Timestamp.now(),
-          'type': 'ルーレット',
-          'prize': data['prize'] ?? '',
-        });
-      }
-
-      // 日付でソート（新しい順）
+      // タイムスタンプで降順ソート（最新順）
       history.sort((a, b) {
-        final aTime = a['timestamp'] as Timestamp;
-        final bTime = b['timestamp'] as Timestamp;
-        return bTime.compareTo(aTime);
+        final aTimestamp = a['timestamp'] as Timestamp;
+        final bTimestamp = b['timestamp'] as Timestamp;
+        return bTimestamp.compareTo(aTimestamp);
       });
 
       setState(() {
@@ -128,6 +158,32 @@ class _PointHistoryViewState extends State<PointHistoryView> {
       });
     } catch (e) {
       print('ポイント履歴の読み込みに失敗しました: $e');
+    }
+  }
+  
+  // ソース表示名を取得
+  String _getSourceDisplayName(String source) {
+    switch (source) {
+      case 'slot_machine':
+        return 'スロット';
+      case 'roulette':
+        return 'ルーレット';
+      case 'store_payment':
+        return '店舗決済';
+      case 'bonus':
+        return 'ボーナス';
+      case 'campaign':
+        return 'キャンペーン';
+      case 'purchase':
+        return '商品購入';
+      case 'exchange':
+        return 'ポイント交換';
+      case 'admin':
+        return '管理者調整';
+      case 'refund':
+        return '返金';
+      default:
+        return 'その他';
     }
   }
 
@@ -282,8 +338,9 @@ class _PointHistoryViewState extends State<PointHistoryView> {
         children: _pointHistory.map((history) => _buildHistoryCard(
           storeName: history['storeName'],
           timestamp: _formatTimestamp(history['timestamp']),
-          point: '${history['points']}P',
+          points: history['points'],
           type: history['type'],
+          transactionType: history['transactionType'],
         )).toList(),
       ),
     );
@@ -331,9 +388,13 @@ class _PointHistoryViewState extends State<PointHistoryView> {
   Widget _buildHistoryCard({
     required String storeName,
     required String timestamp,
-    required String point,
+    required int points,
     String? type,
+    String? transactionType,
   }) {
+    final isEarn = transactionType == 'earn';
+    final pointText = '${isEarn ? '+' : '-'}${points.abs()}P';
+    final pointColor = isEarn ? const Color(0xFFFF6B35) : Colors.red;
     return Container(
       width: double.infinity,
       height: 90,
@@ -388,7 +449,7 @@ class _PointHistoryViewState extends State<PointHistoryView> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      width: 40,
+                      width: type == 'スロット' ? 50 : 40, // スロットの場合は幅を広げる
                       height: 20,
                       decoration: BoxDecoration(
                         color: _getTypeColor(type ?? '支払い'),
@@ -397,8 +458,8 @@ class _PointHistoryViewState extends State<PointHistoryView> {
                       child: Center(
                         child: Text(
                           type ?? '支払い',
-                          style: const TextStyle(
-                            fontSize: 10,
+                          style: TextStyle(
+                            fontSize: type == 'スロット' ? 8 : 10, // スロットの場合は文字を小さく
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
@@ -407,9 +468,10 @@ class _PointHistoryViewState extends State<PointHistoryView> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      point,
-                      style: const TextStyle(
+                      pointText,
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
+                        color: pointColor,
                       ),
                     ),
                     const SizedBox(width: 16),

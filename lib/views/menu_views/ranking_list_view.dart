@@ -38,10 +38,18 @@ class _RankingListViewState extends State<RankingListView> {
             Container(
               height: 200,
               padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: const Icon(
-                Icons.emoji_events,
-                size: 150,
-                color: Colors.amber,
+              child: Image.asset(
+                'assets/images/medal_icon.png',
+                width: 150,
+                height: 150,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.emoji_events,
+                    size: 150,
+                    color: Colors.amber,
+                  );
+                },
               ),
             ),
             

@@ -91,23 +91,22 @@ class _StampViewState extends State<StampView> {
         // スタンプ数でソート（多い順）
         storeStamps.sort((a, b) => (b['stamps'] as int).compareTo(a['stamps'] as int));
         
-        // 各店舗のゴールドスタンプ数と通常スタンプ数を計算
-        int totalGoldStampsCount = 0;
-        int totalNormalStampsCount = 0;
+        // ユーザーデータからゴールドスタンプ数を取得
+        final userGoldStampsDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
         
-        for (final store in storeStamps) {
-          final stampCount = store['stamps'] as int;
-          if (stampCount >= 10) {
-            totalGoldStampsCount += 1; // 10個以上でゴールドスタンプ
-          } else {
-            totalNormalStampsCount += stampCount; // 通常スタンプ数
-          }
+        int totalGoldStampsCount = 0;
+        if (userGoldStampsDoc.exists) {
+          final userData = userGoldStampsDoc.data()!;
+          totalGoldStampsCount = (userData['goldStamps'] ?? 0) as int;
         }
         
         // 総スタンプ数を設定
         getAllStamps = totalStamps;
         totalGoldStamps = totalGoldStampsCount;
-        totalNormalStamps = totalNormalStampsCount;
+        totalNormalStamps = totalStamps;
         
         print('総スタンプ数: $totalStamps');
         print('ゴールドスタンプ数: $totalGoldStamps');
@@ -235,7 +234,7 @@ class _StampViewState extends State<StampView> {
                           children: [
                             ClipOval(
                               child: Image.asset(
-                                'assets/images/gold_coin_icon.png',
+                                'assets/images/gold_coin_icon3.png',
                                 width: 20,
                                 height: 20,
                                 fit: BoxFit.cover,
@@ -421,10 +420,18 @@ class _StampViewState extends State<StampView> {
               if (isGold)
                 Container(
                   margin: const EdgeInsets.only(right: 10),
-                  child: const Icon(
-                    Icons.emoji_events,
-                    color: Colors.amber,
-                    size: 20,
+                  child: Image.asset(
+                    'assets/images/gold_trophy_icon.png',
+                    width: 20,
+                    height: 20,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.emoji_events,
+                        color: Colors.amber,
+                        size: 20,
+                      );
+                    },
                   ),
                 ),
             ],
@@ -457,7 +464,7 @@ class _StampViewState extends State<StampView> {
                   child: isCollected
                       ? Image.asset(
                           isGoldStamp 
-                              ? 'assets/images/gold_coin_icon.png'
+                              ? 'assets/images/gold_coin_icon3.png'
                               : 'assets/images/silver_coin_icon.png',
                           width: 40,
                           height: 40,
@@ -495,7 +502,7 @@ class _StampViewState extends State<StampView> {
                                     children: [
                                       ClipOval(
                                         child: Image.asset(
-                                          'assets/images/gold_coin_icon.png',
+                                          'assets/images/gold_coin_icon3.png',
                                           width: 20,
                                           height: 20,
                                           fit: BoxFit.cover,

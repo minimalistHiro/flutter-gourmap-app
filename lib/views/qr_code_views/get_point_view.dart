@@ -296,10 +296,18 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Icon(
-                      Icons.emoji_events,
-                      size: 18,
-                      color: Color(0xFF1E88E5),
+                    Image.asset(
+                      'assets/images/gold_trophy_icon.png',
+                      width: 18,
+                      height: 18,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.emoji_events,
+                          size: 18,
+                          color: Color(0xFF1E88E5),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -320,10 +328,18 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Icon(
-                      Icons.emoji_events,
-                      size: 14,
-                      color: Colors.green,
+                    Image.asset(
+                      'assets/images/silver_trophy_icon.png',
+                      width: 14,
+                      height: 14,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.emoji_events,
+                          size: 14,
+                          color: Colors.green,
+                        );
+                      },
                     ),
                     const Text(
                       ')まで',
@@ -564,7 +580,7 @@ class _GetPointViewState extends State<GetPointView> with TickerProviderStateMix
                     child: ClipOval(
                       child: isCollected
                           ? Image.asset(
-                              'assets/images/gold_coin_icon.png',
+                              'assets/images/gold_coin_icon3.png',
                               width: 40,
                               height: 40,
                               fit: BoxFit.cover,

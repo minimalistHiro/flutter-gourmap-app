@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'home_view.dart';
+import 'home_view.dart'; // _homeViewRefreshCallbackも含まれる
 import 'map_view.dart';
 import 'qr_code_views/qr_code_view.dart';
 import 'post_view.dart';
@@ -67,7 +67,7 @@ class _ContentViewState extends State<ContentView> {
                             onTap: () {
                               setState(() => selectedTab = 1);
                               // ホームタブが選択された時にデータを再読み込み
-                              _refreshCurrentTabData();
+                              _refreshHomeViewData();
                             },
                           ),
                         ),
@@ -205,6 +205,26 @@ class _ContentViewState extends State<ContentView> {
         ),
       ),
     );
+  }
+  
+  // HomeViewのデータを再読み込み
+  void _refreshHomeViewData() {
+    print('ホームタブ押下: HomeViewのデータ再読み込みを開始');
+    
+    // HomeView の再読み込みコールバックを呼び出し
+    // グローバル変数はhome_view.dartで定義されている
+    try {
+      // HomeViewで定義されたグローバルコールバックにアクセス
+      final callback = homeViewRefreshCallback;
+      if (callback != null) {
+        callback();
+        print('HomeViewのデータ再読み込みを実行しました');
+      } else {
+        print('HomeViewのリフレッシュコールバックが見つかりません');
+      }
+    } catch (e) {
+      print('HomeViewのリフレッシュでエラーが発生: $e');
+    }
   }
   
   // 現在のタブに応じてデータを再読み込み

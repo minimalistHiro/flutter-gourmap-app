@@ -59,6 +59,18 @@ class _RankDetailViewState extends State<RankDetailView> {
     return 'ブロンズ';
   }
 
+  // ランクに応じたトロフィーアイコンを取得
+  String _getRankTrophyIcon(String rank) {
+    switch (rank) {
+      case 'ブロンズ': return 'assets/images/bronz_trophy_icon.png';
+      case 'シルバー': return 'assets/images/silver_trophy_icon.png';
+      case 'ゴールド': return 'assets/images/gold_trophy_icon.png';
+      case 'プラチナ': return 'assets/images/platinum_trophy_icon.png';
+      case 'ダイヤモンド': return 'assets/images/platinum_trophy_icon.png'; // ダイヤモンドもプラチナ使用
+      default: return 'assets/images/bronz_trophy_icon.png';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -137,10 +149,18 @@ class _RankDetailViewState extends State<RankDetailView> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.emoji_events,
-                color: Colors.white,
-                size: 30,
+              Image.asset(
+                _getRankTrophyIcon(currentRank),
+                width: 30,
+                height: 30,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.emoji_events,
+                    color: Colors.white,
+                    size: 30,
+                  );
+                },
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -177,37 +197,24 @@ class _RankDetailViewState extends State<RankDetailView> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Icon(
-                  Icons.emoji_events,
-                  color: Colors.yellow,
-                  size: 30,
+                Image.asset(
+                  _getRankTrophyIcon(currentRank),
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.emoji_events,
+                      color: Colors.yellow,
+                      size: 30,
+                    );
+                  },
                 ),
               ],
             ),
           ),
           
           const SizedBox(height: 15),
-          
-          // 現在のパラメータ
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildParameterCard(
-                'ゴールドスタンプ',
-                '$currentGoldStamps',
-                '個',
-                'assets/images/gold_coin_icon.png',
-                Colors.amber,
-              ),
-              _buildParameterCard(
-                '総支払額',
-                '${(currentPaid / 1000).toStringAsFixed(1)}',
-                '千円',
-                Icons.monetization_on,
-                Colors.green,
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -273,7 +280,7 @@ class _RankDetailViewState extends State<RankDetailView> {
             currentGoldStamps,
             nextRankInfo['requiredGoldStamps'],
             remainingGoldStamps > 0 ? remainingGoldStamps : 0,
-            'assets/images/gold_coin_icon.png',
+            'assets/images/gold_coin_icon2.png',
             Colors.amber,
           ),
           const SizedBox(height: 12),
@@ -564,18 +571,28 @@ class _RankDetailViewState extends State<RankDetailView> {
       child: Row(
         children: [
           // ランクアイコン
-          Container(
+          SizedBox(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: isUnlocked ? _getRankColor(rank['name']) : Colors.grey[300],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isUnlocked ? Icons.emoji_events : Icons.lock,
-              color: isUnlocked ? Colors.white : Colors.grey[600],
-              size: 20,
-            ),
+            child: isUnlocked 
+              ? Image.asset(
+                  _getRankTrophyIcon(rank['name']),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(
+                      Icons.emoji_events,
+                      color: _getRankColor(rank['name']),
+                      size: 40,
+                    );
+                  },
+                )
+              : Icon(
+                  Icons.lock,
+                  color: Colors.grey[600],
+                  size: 40,
+                ),
           ),
           
           const SizedBox(width: 15),
@@ -635,14 +652,7 @@ class _RankDetailViewState extends State<RankDetailView> {
               ],
             ),
           ),
-          
-                     // 王冠アイコン
-           if (isUnlocked)
-             Icon(
-               Icons.emoji_events,
-               color: _getRankColor(rank['name']),
-               size: 24,
-             ),
+
         ],
       ),
     );

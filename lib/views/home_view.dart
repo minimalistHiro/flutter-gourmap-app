@@ -41,6 +41,10 @@ class HomeView extends StatefulWidget {
   State<HomeView> createState() => _HomeViewState();
 }
 
+// HomeViewのデータ再読み込み用のコールバック
+typedef HomeViewRefreshCallback = void Function();
+HomeViewRefreshCallback? homeViewRefreshCallback;
+
 class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   bool isShowLoginView = false;
   bool isShowSignUpView = false;
@@ -70,6 +74,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   // クーポンデータ
   List<Map<String, dynamic>> _coupons = [];
   bool _isLoadingCoupons = true;
+  
+  // スロットの表示状態
+  bool _isSlotAvailable = true;
+  
+  // スロット履歴のキャッシュ
+  List<Map<String, dynamic>> _slotHistory = [];
   
   // 画像読み込み用のメソッド（CORS問題対応）
   Future<Uint8List?> _loadImageFromUrl(String imageUrl) async {
@@ -122,6 +132,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    
+    // データ再読み込み用のコールバックを登録
+    homeViewRefreshCallback = _refreshAllData;
+    
     _slideController = AnimationController(
       duration: const Duration(seconds: 3),
       vsync: this,
@@ -138,11 +152,30 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   
   // 初期データ読み込み
   Future<void> _initializeData() async {
+    // まずユーザー認証状態を確認
+    final user = _auth.currentUser;
+    if (user == null) {
+      print('ユーザーが未ログインのため、一部データの読み込みをスキップします');
+      // 未ログイン時は投稿とクーポンのみ読み込み
+      await Future.wait([
+        _loadPosts(),
+        _loadCoupons(),
+      ]);
+      return;
+    }
+    
+    print('ユーザーログイン済み (${user.uid})、全データを読み込み開始');
+    
+    // 並列でデータを読み込み（順序依存のないもの）
     await Future.wait([
       _loadPosts(),
       _loadCoupons(),
-      _refreshUserData(),
+      _loadUserData(user.uid), // 新しいメソッドで確実にユーザーデータを取得
+      _loadSlotHistory(user.uid), // スロット履歴を事前に読み込み
     ]);
+    
+    // ユーザーデータ読み込み後にスロット可用性チェック
+    await _checkSlotAvailability();
     
     // ユーザー情報の監視を開始
     _listenToUserData();
@@ -156,18 +189,40 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // コールバックをクリア
+    if (homeViewRefreshCallback == _refreshAllData) {
+      homeViewRefreshCallback = null;
+    }
+    
     _slideController.dispose();
     _indicatorController.dispose();
     super.dispose();
+  }
+  
+  // 全データを再読み込み
+  Future<void> _refreshAllData() async {
+    if (!mounted) return;
+    
+    print('HomeView: データ再読み込み開始');
+    
+    try {
+      // すべてのデータを再読み込み
+      await _initializeData();
+      print('HomeView: データ再読み込み完了');
+    } catch (e) {
+      print('HomeView: データ再読み込みエラー: $e');
+    }
   }
 
   void _startSlideTime() {
     _slideController.repeat();
     _slideController.addListener(() {
       if (_slideController.value >= 1.0) {
-        setState(() {
-          selectedSlide = (selectedSlide % pages.length) + 1;
-        });
+        if (mounted) {
+          setState(() {
+            selectedSlide = (selectedSlide % pages.length) + 1;
+          });
+        }
         _slideController.reset();
       }
     });
@@ -192,9 +247,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         });
       } else {
         // ユーザーがログインしていない場合は未読状態をリセット
-        setState(() {
-          _hasUnreadNotifications = false;
-        });
+        if (mounted) {
+          setState(() {
+            _hasUnreadNotifications = false;
+          });
+        }
       }
     });
   }
@@ -397,46 +454,72 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
   }
   
+  // スロットの利用可能性をチェック（キャッシュされたデータを使用）
+  Future<void> _checkSlotAvailability() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('ユーザー未ログイン、スロット非表示');
+        if (mounted) {
+          setState(() {
+            _isSlotAvailable = false;
+          });
+        }
+        return;
+      }
+      
+      print('スロット可用性チェック開始、キャッシュされた履歴: ${_slotHistory.length}件');
+      
+      // キャッシュされたスロット履歴を使用
+      final todayPlayCount = _slotHistory.length;
+      final isAvailable = todayPlayCount < 1;
+      
+      print('今日のプレイ回数: $todayPlayCount, 利用可能: $isAvailable');
+      
+      if (mounted) {
+        setState(() {
+          _isSlotAvailable = isAvailable;
+        });
+      }
+      
+      print('スロット可用性チェック完了: $_isSlotAvailable');
+    } catch (e) {
+      print('スロット可用性チェックエラー: $e');
+      // エラーの場合は安全のため非表示にする
+      if (mounted) {
+        setState(() {
+          _isSlotAvailable = false;
+        });
+      }
+    }
+  }
+  
   // ユーザーデータの監視
   void _listenToUserData() {
     _auth.authStateChanges().listen((User? user) {
       if (user != null) {
         // ユーザーがログインしている場合
-        setState(() {
-          isLogin = true;
-        });
+        if (mounted) {
+          setState(() {
+            isLogin = true;
+          });
+        }
         
         // Firestoreからユーザー情報を取得
         _firestore.collection('users').doc(user.uid).snapshots().listen((snapshot) async {
           if (snapshot.exists && mounted) {
             final data = snapshot.data()!;
             
-            // 全店舗のゴールドスタンプ数を計算
-            int totalGoldStamps = 0;
-            try {
-              final userStampsSnapshot = await _firestore
-                  .collection('user_stamps')
-                  .doc(user.uid)
-                  .collection('stores')
-                  .get();
-              
-              for (final storeDoc in userStampsSnapshot.docs) {
-                final storeData = storeDoc.data();
-                final stampCount = storeData['stamps'] ?? 0;
-                if (stampCount >= 10) {
-                  totalGoldStamps += 1; // 10個以上でゴールドスタンプ
-                }
-              }
-            } catch (e) {
-              print('ゴールドスタンプ数取得エラー: $e');
-              totalGoldStamps = data['goldStamps'] ?? 0; // フォールバック
-            }
+            // ユーザーデータからゴールドスタンプ数を直接取得
+            final userGoldStamps = data['goldStamps'] ?? 0;
             
-            setState(() {
-              points = data['points'] ?? 0;
-              goldStamps = totalGoldStamps;
-              paid = data['paid'] ?? 10000;
-            });
+            if (mounted) {
+              setState(() {
+                points = data['points'] ?? 0;
+                goldStamps = userGoldStamps;
+                paid = data['paid'] ?? 10000;
+              });
+            }
             
             // データベースのランクと現在計算されたランクが異なる場合は更新
             final dbRank = data['rank'] ?? 'ブロンズ';
@@ -448,12 +531,14 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         });
       } else {
         // ユーザーがログインしていない場合
-        setState(() {
-          isLogin = false;
-          points = 0;
-          goldStamps = 0;
-          paid = 10000;
-        });
+        if (mounted) {
+          setState(() {
+            isLogin = false;
+            points = 0;
+            goldStamps = 0;
+            paid = 10000;
+          });
+        }
       }
     });
   }
@@ -514,30 +599,96 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
   }
 
-  // ユーザーデータの手動更新
+  // ユーザーデータの確実な読み込み
+  Future<void> _loadUserData(String userId) async {
+    try {
+      print('ユーザーデータ読み込み開始: $userId');
+      
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        print('ユーザードキュメントが存在しません: $userId');
+        return;
+      }
+      
+      final data = userDoc.data()!;
+      print('ユーザーデータ: $data');
+      
+      if (mounted) {
+        setState(() {
+          points = data['points'] ?? 0;
+          goldStamps = data['goldStamps'] ?? 0;
+          paid = data['paid'] ?? 10000;
+          isLogin = true;
+        });
+      }
+      
+      // チュートリアル表示チェック
+      final showTutorial = data['showTutorial'] ?? false;
+      if (showTutorial) {
+        _showTutorial();
+      }
+      
+      print('ユーザーデータ読み込み完了: points=$points, goldStamps=$goldStamps, paid=$paid');
+    } catch (e) {
+      print('ユーザーデータ読み込みエラー: $e');
+    }
+  }
+  
+  // スロット履歴の読み込み
+  Future<void> _loadSlotHistory(String userId) async {
+    try {
+      print('スロット履歴読み込み開始: $userId');
+      
+      // 今日の日付を取得
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      // まずシンプルなクエリでユーザーのスロット履歴を取得
+      final slotHistorySnapshot = await _firestore
+          .collection('slot_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      print('取得したスロット履歴総数: ${slotHistorySnapshot.docs.length}');
+      
+      // 今日のデータをクライアントサイドでフィルタリング
+      final todaySlotHistory = slotHistorySnapshot.docs.where((doc) {
+        final data = doc.data();
+        final timestamp = data['timestamp'] as Timestamp?;
+        if (timestamp == null) return false;
+        
+        final docDate = timestamp.toDate();
+        final docDay = DateTime(docDate.year, docDate.month, docDate.day);
+        return docDay.isAtSameMomentAs(today);
+      }).map((doc) => {
+        'id': doc.id,
+        ...doc.data(),
+      }).toList();
+      
+      print('今日のスロット履歴: ${todaySlotHistory.length}件');
+      
+      if (mounted) {
+        setState(() {
+          _slotHistory = todaySlotHistory;
+        });
+      }
+      
+      print('スロット履歴読み込み完了');
+    } catch (e) {
+      print('スロット履歴読み込みエラー: $e');
+      if (mounted) {
+        setState(() {
+          _slotHistory = [];
+        });
+      }
+    }
+  }
+
+  // ユーザーデータの手動更新（後方互換性のため残す）
   Future<void> _refreshUserData() async {
     final user = _auth.currentUser;
     if (user != null) {
-      try {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-        if (doc.exists && mounted) {
-          final data = doc.data()!;
-          setState(() {
-            points = data['points'] ?? 0;
-            goldStamps = data['goldStamps'] ?? 0;
-            paid = data['paid'] ?? 10000;
-          });
-          
-          // チュートリアル表示チェック
-          final showTutorial = data['showTutorial'] ?? false;
-          if (showTutorial) {
-            _showTutorial();
-          }
-        }
-      } catch (e) {
-        // エラーハンドリング
-        print('データ更新エラー: $e');
-      }
+      await _loadUserData(user.uid);
     }
   }
 
@@ -706,6 +857,29 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
   }
 
+  // ランクに応じたトロフィーアイコンを取得
+  String _getRankTrophyIcon() {
+    final currentRank = _calculateRank();
+    switch (currentRank) {
+      case 1: return 'assets/images/bronz_trophy_icon.png'; // ブロンズ
+      case 2: return 'assets/images/silver_trophy_icon.png'; // シルバー
+      case 3: return 'assets/images/gold_trophy_icon.png'; // ゴールド
+      case 4: return 'assets/images/platinum_trophy_icon.png'; // プラチナ
+      default: return 'assets/images/bronz_trophy_icon.png'; // ブロンズ
+    }
+  }
+
+  // 次のランクに応じたトロフィーアイコンを取得
+  String _getNextRankTrophyIcon() {
+    final nextRank = _getNextRankRequirements();
+    switch (nextRank['rank']) {
+      case 'シルバー': return 'assets/images/silver_trophy_icon.png';
+      case 'ゴールドスタンプ': return 'assets/images/gold_trophy_icon.png';
+      case 'プラチナ': return 'assets/images/platinum_trophy_icon.png';
+      default: return 'assets/images/platinum_trophy_icon.png';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -848,10 +1022,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                Icons.emoji_events,
-                color: _getRankColor(),
-                size: 24,
+              Image.asset(
+                _getRankTrophyIcon(),
+                width: 24,
+                height: 24,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.emoji_events,
+                    color: _getRankColor(),
+                    size: 24,
+                  );
+                },
               ),
             ],
           ),
@@ -1098,7 +1280,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                     const SizedBox(width: 16),
                     ClipOval(
                       child: Image.asset(
-                        'assets/images/gold_coin_icon.png',
+                        'assets/images/gold_coin_icon2.png',
                         width: 20,
                         height: 20,
                         fit: BoxFit.cover,
@@ -1174,6 +1356,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   // MARK: - rouletteView
   Widget _buildRouletteView() {
+    // ログインしていない場合、またはスロットが利用不可能な場合は非表示
+    if (!isLogin || !_isSlotAvailable) {
+      return const SizedBox.shrink();
+    }
+    
     return GestureDetector(
       onTap: () {
         if (!isLogin) {
@@ -1193,16 +1380,100 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       child: Container(
         width: double.infinity,
         height: MediaQuery.of(context).size.width / 6,
-        color: isLogin ? const Color(0xFFFFEB3B) : Colors.grey, // ログイン状態に応じて色を変更
-        child: Center(
-          child: Text(
-            isLogin ? 'スロット' : 'ログインしてスロット',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isLogin ? Colors.black : Colors.white,
+        decoration: BoxDecoration(
+          gradient: isLogin 
+            ? const LinearGradient(
+                colors: [Color(0xFFFFD700), Color(0xFFFFA500)], // ゴールドグラデーション
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Colors.grey, Colors.grey],
+              ),
+          boxShadow: isLogin 
+            ? [
+                BoxShadow(
+                  color: Colors.orange.withOpacity(0.3),
+                  spreadRadius: 2,
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+        ),
+        child: Stack(
+          children: [
+            // 背景装飾
+            if (isLogin) ...[
+              Positioned(
+                left: 20,
+                top: 10,
+                child: Icon(
+                  Icons.star,
+                  color: Colors.yellow[200],
+                  size: 20,
+                ),
+              ),
+              Positioned(
+                right: 20,
+                bottom: 10,
+                child: Icon(
+                  Icons.star,
+                  color: Colors.yellow[200],
+                  size: 16,
+                ),
+              ),
+              Positioned(
+                left: 50,
+                bottom: 15,
+                child: Icon(
+                  Icons.casino,
+                  color: Colors.white.withOpacity(0.3),
+                  size: 24,
+                ),
+              ),
+            ],
+            // メインコンテンツ
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isLogin) ...[
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.casino,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Text(
+                    isLogin ? 'スロットチャレンジ' : 'ログインしてスロット',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isLogin ? Colors.white : Colors.white,
+                      shadows: isLogin 
+                        ? [
+                            Shadow(
+                              offset: const Offset(1, 1),
+                              blurRadius: 2,
+                              color: Colors.black.withOpacity(0.3),
+                            ),
+                          ]
+                        : null,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -1226,12 +1497,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           physics: const NeverScrollableScrollPhysics(),
           children: [
             _buildMenuButton('ポイント', 'assets/images/point_icon.png', isLogin, isImage: true),
-            _buildMenuButton('スタンプ', 'assets/images/silver_coin_icon.png', isLogin, isImage: true),
-            _buildMenuButton('友達紹介', Icons.people, isLogin),
-            _buildMenuButton('店舗一覧', Icons.store, isLogin),
-            _buildMenuButton('ランキング', Icons.emoji_events, isLogin),
-            _buildMenuButton('フィードバック', Icons.feedback, isLogin),
-            _buildMenuButton('店舗導入', Icons.qr_code_scanner, isLogin),
+            _buildMenuButton('スタンプ', 'assets/images/gold_coin_icon2.png', isLogin, isImage: true),
+            _buildMenuButton('友達紹介', 'assets/images/friend_intro_icon.png', isLogin, isImage: true),
+            _buildMenuButton('店舗一覧', 'assets/images/store_icon.png', isLogin, isImage: true),
+            _buildMenuButton('ランキング', 'assets/images/trophy_icon.png', isLogin, isImage: true),
+            _buildMenuButton('フィードバック', 'assets/images/chats_icon.png', isLogin, isImage: true),
+            _buildMenuButton('店舗導入', 'assets/images/smartphone_qrcode_icon.png', isLogin, isImage: true),
           ],
         ),
       ),
@@ -1277,10 +1548,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.emoji_events,
-                        color: Colors.white,
-                        size: 16,
+                      Image.asset(
+                        _getRankTrophyIcon(),
+                        width: 16,
+                        height: 16,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.emoji_events,
+                            color: Colors.white,
+                            size: 16,
+                          );
+                        },
                       ),
                       const SizedBox(width: 5),
                       Text(
@@ -1374,10 +1653,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                               ),
                             ),
                             const SizedBox(width: 5),
-                            Icon(
-                              Icons.emoji_events,
-                              color: _getNextRankRequirements()['color'],
-                              size: 14,
+                            Image.asset(
+                              _getNextRankTrophyIcon(),
+                              width: 14,
+                              height: 14,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.emoji_events,
+                                  color: _getNextRankRequirements()['color'],
+                                  size: 14,
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -1413,9 +1700,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       child: PageView.builder(
         itemCount: pages.length,
         onPageChanged: (index) {
-          setState(() {
-            selectedSlide = index + 1;
-          });
+          if (mounted) {
+            setState(() {
+              selectedSlide = index + 1;
+            });
+          }
         },
         itemBuilder: (context, index) {
           return Container(
@@ -2312,10 +2601,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           Text(
             title,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
               color: isLogin ? Colors.black : Colors.grey,
             ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

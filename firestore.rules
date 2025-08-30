@@ -28,6 +28,19 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // ユーザースタンプコレクション（フラット構造 - ポイント履歴用）
+    match /user_stamps/{stampId} {
+      // 読み取り: 自分のスタンプデータのみ
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      // 書き込み: 自分のスタンプデータのみ（作成時）
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      // 更新・削除: 自分のスタンプデータのみ
+      allow update, delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
     // スタンプ履歴コレクション
     match /stamp_history/{historyId} {
       // 読み取り: 認証済みユーザー（自分の履歴のみ）
@@ -84,6 +97,45 @@ service cloud.firestore {
       // 更新・削除: 作成者のみ
       allow update, delete: if request.auth != null && 
         request.auth.uid == resource.data.userId;
+    }
+    
+    // スロット履歴コレクション
+    match /slot_history/{historyId} {
+      // 読み取り: 自分のスロット履歴のみ
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      // 作成: 認証済みユーザー（自分のスロット履歴のみ）
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      // 更新・削除: 自分のスロット履歴のみ
+      allow update, delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // ルーレット履歴コレクション
+    match /roulette_history/{historyId} {
+      // 読み取り: 自分のルーレット履歴のみ
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      // 作成: 認証済みユーザー（自分のルーレット履歴のみ）
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      // 更新・削除: 自分のルーレット履歴のみ
+      allow update, delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // ポイント獲得履歴コレクション（スタンプ履歴とは別）
+    match /point_history/{historyId} {
+      // 読み取り: 自分のポイント履歴のみ
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      // 作成: 認証済みユーザー（自分のポイント履歴のみ）
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      // 更新・削除: 自分のポイント履歴のみ
+      allow update, delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
     }
     
     // その他のコレクション

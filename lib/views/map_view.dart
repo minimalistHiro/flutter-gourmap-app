@@ -92,9 +92,11 @@ class _MapViewState extends State<MapView> {
         }
       }
       
-      setState(() {
-        _stores = stores;
-      });
+      if (mounted) {
+        setState(() {
+          _stores = stores;
+        });
+      }
       
       // 店舗データ読み込み後にユーザーのスタンプ状況を読み込む
       await _loadUserStamps();
@@ -128,9 +130,11 @@ class _MapViewState extends State<MapView> {
         };
       }
 
-      setState(() {
-        _userStamps = userStamps;
-      });
+      if (mounted) {
+        setState(() {
+          _userStamps = userStamps;
+        });
+      }
       
       // 店舗の花アイコンの種類を更新
       _updateStoreFlowerTypes();
@@ -183,11 +187,13 @@ class _MapViewState extends State<MapView> {
         desiredAccuracy: LocationAccuracy.high,
       );
       
-      setState(() {
-        _currentLocation = LatLng(position.latitude, position.longitude);
-        // 地図を現在地に移動
-        _mapController.move(_currentLocation, 15.0);
-      });
+      if (mounted) {
+        setState(() {
+          _currentLocation = LatLng(position.latitude, position.longitude);
+          // 地図を現在地に移動
+          _mapController.move(_currentLocation, 15.0);
+        });
+      }
     } catch (e) {
       print('現在地の取得に失敗しました: $e');
     }
@@ -211,7 +217,7 @@ class _MapViewState extends State<MapView> {
       ),
       child: ClipOval(
         child: Image.asset(
-          'assets/images/gold_coin_icon.png',
+          'assets/images/gold_coin_icon2.png',
           width: size,
           height: size,
           fit: BoxFit.cover,
@@ -553,7 +559,7 @@ class _MapViewState extends State<MapView> {
                           children: [
                             ClipOval(
                               child: Image.asset(
-                                'assets/images/gold_coin_icon.png',
+                                'assets/images/gold_coin_icon2.png',
                                 width: 14,
                                 height: 14,
                                 fit: BoxFit.cover,

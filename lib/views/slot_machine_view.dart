@@ -404,14 +404,18 @@ class _SlotMachineViewState extends State<SlotMachineView> with TickerProviderSt
         
         // ポイント履歴にも追加（ポイントがある場合のみ）
         if (points > 0) {
-          final pointHistoryRef = _firestore.collection('user_stamps').doc();
+          final pointHistoryRef = _firestore.collection('point_history').doc();
           transaction.set(pointHistoryRef, {
             'userId': user.uid,
             'storeName': 'スロット',
+            'storeId': null, // スロットは店舗IDなし
             'points': points,
+            'timestamp': FieldValue.serverTimestamp(), // ポイント履歴用タイムスタンプ
             'createdAt': FieldValue.serverTimestamp(),
             'type': 'スロット',
-            'description': prize,
+            'source': 'slot_machine', // ポイント獲得元
+            'description': prize, // '1等 - 3つゾロ目 10ポイント' など
+            'transactionType': 'earn', // 'earn' (獲得) または 'spend' (消費)
           });
         }
       });
@@ -714,73 +718,6 @@ class _SlotMachineViewState extends State<SlotMachineView> with TickerProviderSt
               ),
               
               const SizedBox(height: 20),
-              
-              // テスト用ボタン（開発用）
-              ElevatedButton(
-                onPressed: _testGoldenAnimation,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFD700), // ゴールド色
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  elevation: 3,
-                ),
-                child: const Text(
-                  '🎰 1等アニメーションテスト',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 10),
-              
-              // 2等テスト用ボタン
-              ElevatedButton(
-                onPressed: _testSecondPlaceAnimation,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC0C0C0), // シルバー色
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  elevation: 3,
-                ),
-                child: const Text(
-                  '🎰 2等アニメーションテスト',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 10),
-              
-              // ハズレテスト用ボタン
-              ElevatedButton(
-                onPressed: _testLoseAnimation,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF757575), // グレー色
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  elevation: 3,
-                ),
-                child: const Text(
-                  '🎰 ハズレアニメーションテスト',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
               
               const SizedBox(height: 30),
               
@@ -1522,42 +1459,12 @@ class _SlotMachineViewState extends State<SlotMachineView> with TickerProviderSt
     });
   }
   
-  // テスト用: 1等アニメーションを手動実行
-  void _testGoldenAnimation() {
-    setState(() {
-      _prizeResult = 1; // 1等に設定
-      _showResult = true;
-      _finalNumber = 777; // テスト用の数字
-    });
-    _playGoldenAnimation();
-  }
-  
-  // テスト用: 2等アニメーションを手動実行
-  void _testSecondPlaceAnimation() {
-    setState(() {
-      _prizeResult = 2; // 2等に設定
-      _showResult = true;
-      _finalNumber = 711; // テスト用の数字（2つ同じ数字）
-    });
-    _playSilverAnimation();
-  }
-  
   // ハズレアニメーションを実行
   void _playLoseAnimation() {
     // ハズレポップアップをすぐに表示
     setState(() {
       _showLosePopup = true;
     });
-  }
-  
-  // テスト用: ハズレアニメーションを手動実行
-  void _testLoseAnimation() {
-    setState(() {
-      _prizeResult = 3; // ハズレに設定
-      _showResult = true;
-      _finalNumber = 123; // テスト用の数字（バラバラ）
-    });
-    _playLoseAnimation();
   }
 }
 

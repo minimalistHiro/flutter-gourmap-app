@@ -921,7 +921,7 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
                           child: isCollected
                               ? Image.asset(
                                   isGoldStamp 
-                                      ? 'assets/images/gold_coin_icon.png'
+                                      ? 'assets/images/gold_coin_icon3.png'
                                       : 'assets/images/silver_coin_icon.png',
                                   width: 40,
                                   height: 40,
@@ -959,7 +959,7 @@ class _StoreDetailViewState extends State<StoreDetailView> with TickerProviderSt
                                             children: [
                                               ClipOval(
                                                 child: Image.asset(
-                                                  'assets/images/gold_coin_icon.png',
+                                                  'assets/images/gold_coin_icon3.png',
                                                   width: 20,
                                                   height: 20,
                                                   fit: BoxFit.cover,

@@ -467,7 +467,7 @@ class _AccountViewState extends State<AccountView> {
                     title: 'ゴールドスタンプ',
                     value: '$goldStamps 個',
                     color: Colors.amber,
-                    imagePath: 'assets/images/gold_coin_icon.png',
+                    imagePath: 'assets/images/gold_coin_icon2.png',
                   ),
                 ),
 
