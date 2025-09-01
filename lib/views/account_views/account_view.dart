@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firebase_auth_service.dart';
 import 'profile_edit_view.dart';
 import 'update_username_view.dart';
@@ -26,6 +27,7 @@ class AccountView extends StatefulWidget {
 
 class _AccountViewState extends State<AccountView> {
   final FirebaseAuthService _authService = FirebaseAuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
 
@@ -70,8 +72,8 @@ class _AccountViewState extends State<AccountView> {
             ),
           ),
           content: const Text(
-            '本当にアカウントを削除しますか？\n\nこの操作は取り消すことができません。\n\n・すべてのデータが削除されます\n・投稿、ポイント、スタンプが失われます\n・店舗情報も削除されます',
-            style: TextStyle(fontSize: 16),
+            '本当にアカウントを削除しますか？\n\nこの操作は取り消すことができません。\n\n削除されるデータ：\n・ユーザー情報（プロフィール、ポイント等）\n・投稿、コメント、いいね\n・クーポン、スタンプ履歴\n・紹介履歴、ポイント履歴\n・スロット・ルーレット履歴\n・店舗情報（オーナーの場合）\n・通知情報',
+            style: TextStyle(fontSize: 14),
           ),
           actions: [
             TextButton(
@@ -107,11 +109,46 @@ class _AccountViewState extends State<AccountView> {
 
     // ユーザーが退会を確認した場合のみ実行
     if (shouldDeleteAccount == true) {
+      // 退会処理中のローディング表示
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Dialog(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 20),
+                  Text('退会処理中...'),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
       try {
-        // Firebase Authからアカウントを削除
         final user = _authService.currentUser;
         if (user != null) {
+          final userId = user.uid;
+          print('=== アカウント退会処理開始 ===');
+          print('削除対象ユーザーID: $userId');
+
+          // Firestoreからユーザー関連データを包括的に削除
+          await _deleteUserData(userId);
+
+          // Firebase Authからアカウントを削除
           await user.delete();
+          print('Firebase Authアカウント削除完了');
+
+          // ローディングダイアログを閉じる
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+
           // 退会後はwelcome_view.dartに戻る
           if (mounted) {
             Navigator.of(context).pushNamedAndRemoveUntil(
@@ -119,17 +156,194 @@ class _AccountViewState extends State<AccountView> {
               (route) => false,
             );
           }
+
+          print('=== アカウント退会処理完了 ===');
         }
       } catch (e) {
+        print('アカウント退会エラー: $e');
+        
+        // ローディングダイアログを閉じる
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('アカウント退会に失敗しました: $e'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
             ),
           );
         }
       }
+    }
+  }
+
+  // Firestoreからユーザー関連データを包括的に削除
+  Future<void> _deleteUserData(String userId) async {
+    try {
+      print('Firestoreデータ削除開始...');
+      
+      // バッチ処理で効率的に削除
+      final batch = _firestore.batch();
+      
+      // 1. ユーザー情報を削除
+      print('1. ユーザー情報削除');
+      batch.delete(_firestore.collection('users').doc(userId));
+      
+      // 2. ユーザーの投稿を削除
+      print('2. 投稿データ削除');
+      final postsQuery = await _firestore
+          .collection('posts')
+          .where('createdBy', isEqualTo: userId)
+          .get();
+      
+      for (final doc in postsQuery.docs) {
+        batch.delete(doc.reference);
+        print('投稿削除: ${doc.id}');
+      }
+      
+      // 3. ユーザーのクーポンを削除
+      print('3. クーポンデータ削除');
+      final couponsQuery = await _firestore
+          .collection('coupons')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in couponsQuery.docs) {
+        batch.delete(doc.reference);
+        print('クーポン削除: ${doc.id}');
+      }
+      
+      // 4. ユーザーのスタンプ履歴を削除
+      print('4. スタンプ履歴削除');
+      final stampHistoryQuery = await _firestore
+          .collection('stamp_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in stampHistoryQuery.docs) {
+        batch.delete(doc.reference);
+        print('スタンプ履歴削除: ${doc.id}');
+      }
+      
+      // 5. ユーザーのポイント履歴を削除
+      print('5. ポイント履歴削除');
+      final pointHistoryQuery = await _firestore
+          .collection('point_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in pointHistoryQuery.docs) {
+        batch.delete(doc.reference);
+        print('ポイント履歴削除: ${doc.id}');
+      }
+      
+      // 6. 紹介履歴を削除（紹介者として）
+      print('6. 紹介履歴削除（紹介者として）');
+      final referralHistoryQuery1 = await _firestore
+          .collection('referral_history')
+          .where('referrerId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in referralHistoryQuery1.docs) {
+        batch.delete(doc.reference);
+        print('紹介履歴削除（紹介者）: ${doc.id}');
+      }
+      
+      // 7. 紹介履歴を削除（被紹介者として）
+      print('7. 紹介履歴削除（被紹介者として）');
+      final referralHistoryQuery2 = await _firestore
+          .collection('referral_history')
+          .where('newUserId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in referralHistoryQuery2.docs) {
+        batch.delete(doc.reference);
+        print('紹介履歴削除（被紹介者）: ${doc.id}');
+      }
+      
+      // 8. スロット履歴を削除
+      print('8. スロット履歴削除');
+      final slotHistoryQuery = await _firestore
+          .collection('slot_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in slotHistoryQuery.docs) {
+        batch.delete(doc.reference);
+        print('スロット履歴削除: ${doc.id}');
+      }
+      
+      // 9. ルーレット履歴を削除
+      print('9. ルーレット履歴削除');
+      final rouletteHistoryQuery = await _firestore
+          .collection('roulette_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in rouletteHistoryQuery.docs) {
+        batch.delete(doc.reference);
+        print('ルーレット履歴削除: ${doc.id}');
+      }
+      
+      // 10. ユーザースタンプデータを削除（フラット構造）
+      print('10. ユーザースタンプデータ削除');
+      final userStampsQuery = await _firestore
+          .collection('user_stamps')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in userStampsQuery.docs) {
+        batch.delete(doc.reference);
+        print('ユーザースタンプ削除: ${doc.id}');
+      }
+      
+      // 11. クーポン使用履歴を削除
+      print('11. クーポン使用履歴削除');
+      final couponUsageQuery = await _firestore
+          .collection('coupon_usage_history')
+          .where('userId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in couponUsageQuery.docs) {
+        batch.delete(doc.reference);
+        print('クーポン使用履歴削除: ${doc.id}');
+      }
+      
+      // 12. 通知を削除（ユーザーが作成者の場合）
+      print('12. 通知データ削除');
+      final notificationsQuery = await _firestore
+          .collection('notifications')
+          .where('createdBy', isEqualTo: userId)
+          .get();
+      
+      for (final doc in notificationsQuery.docs) {
+        batch.delete(doc.reference);
+        print('通知削除: ${doc.id}');
+      }
+      
+      // 13. 店舗データを削除（オーナーの場合）
+      print('13. 店舗データ削除チェック');
+      final storesQuery = await _firestore
+          .collection('stores')
+          .where('ownerId', isEqualTo: userId)
+          .get();
+      
+      for (final doc in storesQuery.docs) {
+        batch.delete(doc.reference);
+        print('店舗削除: ${doc.id}');
+      }
+      
+      // バッチ実行
+      print('バッチ削除実行中...');
+      await batch.commit();
+      print('Firestoreデータ削除完了');
+      
+    } catch (e) {
+      print('Firestoreデータ削除エラー: $e');
+      throw Exception('ユーザーデータの削除に失敗しました: $e');
     }
   }
 

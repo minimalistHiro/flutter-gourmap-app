@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/referral_service.dart';
 
 class NotificationDetailView extends StatefulWidget {
   final String notificationId;
@@ -18,10 +19,12 @@ class _NotificationDetailViewState extends State<NotificationDetailView> {
   // Firebase関連
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ReferralService _referralService = ReferralService();
   
   // お知らせデータ
   Map<String, dynamic>? _notificationData;
   bool _isLoading = true;
+  bool _isClaimingReward = false;
 
   @override
   void initState() {
@@ -68,6 +71,201 @@ class _NotificationDetailViewState extends State<NotificationDetailView> {
         );
       }
     }
+  }
+
+  // 紹介報酬を受け取る
+  Future<void> _claimReferralReward() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _isClaimingReward = true;
+    });
+
+    try {
+      final result = await _referralService.claimReferralReward(
+        widget.notificationId,
+        user.uid,
+      );
+
+      if (mounted) {
+        // ポイント獲得ポップアップを表示
+        await _showPointsEarnedDialog(
+          result['pointsEarned'],
+          result['newUserName'],
+          result['totalPoints'],
+        );
+
+        // 通知データを再読み込み
+        await _loadNotificationData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('エラー: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isClaimingReward = false;
+        });
+      }
+    }
+  }
+
+  // ポイント獲得ポップアップ
+  Future<void> _showPointsEarnedDialog(int pointsEarned, String newUserName, int totalPoints) async {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFF6B35),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.star,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'ポイント獲得！',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFFF6B35),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: const Color(0xFFFF6B35).withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    '友達紹介報酬',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset(
+                        'assets/images/point_icon.png',
+                        width: 32,
+                        height: 32,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.monetization_on,
+                            color: Color(0xFFFF6B35),
+                            size: 32,
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '+$pointsEarned',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFF6B35),
+                        ),
+                      ),
+                      const Text(
+                        'pt',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFF6B35),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$newUserNameさんがあなたの紹介で登録しました！',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '現在のポイント: ${totalPoints}pt',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'おめでとうございます！\n引き続きお友達をご紹介ください。',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                ),
+              ),
+              child: const Text(
+                'OK',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -247,9 +445,151 @@ class _NotificationDetailViewState extends State<NotificationDetailView> {
               ),
             ),
             
+            // 紹介報酬の場合は受け取りボタンを表示
+            if (_notificationData!['type'] == 'referral_reward') ...[
+              const SizedBox(height: 30),
+              _buildReferralRewardButton(),
+            ],
+            
             const SizedBox(height: 100),
           ],
         ),
+      ),
+    );
+  }
+
+  // 紹介報酬受け取りボタン
+  Widget _buildReferralRewardButton() {
+    final user = _auth.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    final referralData = _notificationData!['referralData'] as Map<String, dynamic>?;
+    final isPointsClaimed = referralData?['isPointsClaimed'] ?? false;
+    final pointsToAward = referralData?['pointsToAward'] ?? 1000;
+    final newUserName = referralData?['newUserName'] ?? '新規ユーザー';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Image.asset(
+                'assets/images/point_icon.png',
+                width: 24,
+                height: 24,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.monetization_on,
+                    color: Color(0xFFFF6B35),
+                    size: 24,
+                  );
+                },
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '友達紹介報酬: ${pointsToAward}pt',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFF6B35),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$newUserNameさんがあなたの紹介コードで登録しました！',
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: isPointsClaimed 
+                  ? null 
+                  : _isClaimingReward 
+                      ? null 
+                      : _claimReferralReward,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isPointsClaimed 
+                    ? Colors.grey 
+                    : const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                elevation: isPointsClaimed ? 0 : 2,
+              ),
+              child: _isClaimingReward
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          '受け取り中...',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      isPointsClaimed ? '受け取り済み' : '${pointsToAward}ptを受け取る',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+          if (isPointsClaimed) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                  size: 16,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '受け取り済み',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

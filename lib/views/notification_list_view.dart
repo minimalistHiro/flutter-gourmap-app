@@ -151,6 +151,13 @@ class _NotificationListViewState extends State<NotificationListView> {
           shouldShow = false;
         }
         
+        // 特定ユーザー向け通知の表示制御
+        final user = _auth.currentUser;
+        final targetUserId = data['targetUserId'];
+        if (targetUserId != null && user != null && targetUserId != user.uid) {
+          shouldShow = false;
+        }
+        
         if (shouldShow) {
           notifications.add({
             'id': doc.id,

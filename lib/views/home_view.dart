@@ -81,6 +81,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   // スロット履歴のキャッシュ
   List<Map<String, dynamic>> _slotHistory = [];
   
+  // 紹介ボーナス表示済みかを追跡
+  bool _hasShownReferralBonus = false;
+  
   // 画像読み込み用のメソッド（CORS問題対応）
   Future<Uint8List?> _loadImageFromUrl(String imageUrl) async {
     try {
@@ -628,6 +631,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         _showTutorial();
       }
       
+      // 紹介ボーナス表示チェック
+      final showReferralBonus = data['showReferralBonus'] ?? false;
+      if (showReferralBonus && !_hasShownReferralBonus) {
+        _hasShownReferralBonus = true;
+        // 少し遅延してポップアップを表示（UI構築完了後）
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          if (mounted) {
+            _showReferralBonusPopup();
+          }
+        });
+      }
+      
       print('ユーザーデータ読み込み完了: points=$points, goldStamps=$goldStamps, paid=$paid');
     } catch (e) {
       print('ユーザーデータ読み込みエラー: $e');
@@ -713,6 +728,213 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       } catch (e) {
         print('チュートリアル表示処理エラー: $e');
       }
+    }
+  }
+
+  // 紹介ボーナスポップアップを表示
+  Future<void> _showReferralBonusPopup() async {
+    final user = _auth.currentUser;
+    if (user == null || !mounted) return;
+    
+    try {
+      // 紹介ボーナス表示フラグをfalseに更新
+      await _firestore.collection('users').doc(user.uid).update({
+        'showReferralBonus': false,
+      });
+      
+      // ポップアップを表示
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFFD700), // ゴールド
+                    Color(0xFFFFA500), // オレンジ
+                  ],
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ★アイコン
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          spreadRadius: 2,
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.star,
+                      size: 50,
+                      color: Color(0xFFFF6B35),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // おめでとうメッセージ
+                  const Text(
+                    '🎉 おめでとうございます！',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 2,
+                          color: Colors.black26,
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // ポイント獲得メッセージ
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: const Color(0xFFFF6B35).withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          '友達紹介ボーナス',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFF6B35),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/images/point_icon.png',
+                              width: 24,
+                              height: 24,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(
+                                  Icons.monetization_on,
+                                  color: Color(0xFFFF6B35),
+                                  size: 24,
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              '1000',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFFF6B35),
+                              ),
+                            ),
+                            const Text(
+                              'pt',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFFF6B35),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'を獲得しました！',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // メッセージ
+                  const Text(
+                    'お友達からの紹介ありがとうございます。\nGourMapをお楽しみください！',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 2,
+                          color: Colors.black26,
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // 閉じるボタン
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFFFF6B35),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        elevation: 3,
+                      ),
+                      child: const Text(
+                        'ありがとうございます！',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('紹介ボーナスポップアップ表示エラー: $e');
     }
   }
 

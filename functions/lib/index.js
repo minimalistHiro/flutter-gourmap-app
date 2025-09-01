@@ -32,15 +32,25 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.redeemPoints = exports.issueUserQr = void 0;
+exports.onReferralCreated = exports.redeemPoints = exports.issueUserQr = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
+const nodemailer = __importStar(require("nodemailer"));
 const utils_1 = require("./utils");
 // Firebase Admin初期化
 admin.initializeApp();
 // Firestoreインスタンス
 const db = admin.firestore();
+// メール送信設定
+const mailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: (_a = functions.config().email) === null || _a === void 0 ? void 0 : _a.user,
+        pass: (_b = functions.config().email) === null || _b === void 0 ? void 0 : _b.pass,
+    },
+});
 /**
  * ユーザーQRコードトークンを発行する関数
  * HS256の短命JWT（60秒、有効範囲aud=groumap:redeem、sub=userId、jti）を返す
@@ -208,6 +218,124 @@ exports.redeemPoints = functions.https.onCall(async (data, context) => {
             success: false,
             error: errorMessage
         };
+    }
+});
+/**
+ * 友達紹介システム用のFirestore監視トリガー
+ * 新規ユーザーが紹介コードで登録された際に、両者に通知とメールを送信
+ */
+exports.onReferralCreated = functions.firestore
+    .document('referral_history/{referralId}')
+    .onCreate(async (snap, context) => {
+    try {
+        const referralData = snap.data();
+        const { referrerId, newUserId, newUserName, referrerName } = referralData;
+        // 両方のユーザー情報を取得
+        const [referrerDoc, newUserDoc] = await Promise.all([
+            db.collection('users').doc(referrerId).get(),
+            db.collection('users').doc(newUserId).get(),
+        ]);
+        if (!referrerDoc.exists || !newUserDoc.exists) {
+            console.error('ユーザー情報が見つかりません');
+            return;
+        }
+        const referrerData = referrerDoc.data();
+        const newUserData = newUserDoc.data();
+        // 被紹介者（新規ユーザー）に通知を作成
+        await db.collection('notifications').add({
+            title: 'ポイント獲得！',
+            content: `${referrerName}さんの紹介でGourMapにご登録いただき、ありがとうございます！\n友達紹介ボーナスとして1000ポイントを獲得しました。`,
+            type: 'referral_bonus',
+            category: '紹介ボーナス',
+            priority: '高',
+            isActive: true,
+            isPublished: true,
+            isOwnerOnly: false,
+            targetUserId: newUserId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            publishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            userId: 'system',
+            username: 'システム',
+            userEmail: 'system@groumap.com',
+        });
+        // メール送信処理
+        const emailPromises = [];
+        // 被紹介者（新規ユーザー）にメール送信
+        if (newUserData.email) {
+            emailPromises.push(mailTransporter.sendMail({
+                from: 'GourMap <noreply@groumap.com>',
+                to: newUserData.email,
+                subject: '【GourMap】友達紹介ボーナス1000ポイント獲得！',
+                html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #FF6B35;">🎉 ポイント獲得おめでとうございます！</h2>
+                
+                <p>こんにちは、${newUserData.username || 'ユーザー'}さん</p>
+                
+                <p>${referrerName}さんの紹介でGourMapにご登録いただき、ありがとうございます！</p>
+                
+                <div style="background-color: #FFF5F1; border: 2px solid #FF6B35; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                  <h3 style="color: #FF6B35; margin: 0 0 10px 0;">✨ 友達紹介ボーナス</h3>
+                  <p style="font-size: 24px; font-weight: bold; color: #FF6B35; margin: 0;">+1,000ポイント</p>
+                </div>
+                
+                <p>獲得したポイントは、アプリ内でお得な商品やサービスと交換できます。</p>
+                
+                <p>ぜひGourMapをお楽しみください！</p>
+                
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #666;">
+                  このメールは自動送信されています。<br>
+                  GourMap運営チーム
+                </p>
+              </div>
+            `,
+            }));
+        }
+        // 紹介者にもメール送信（通知と併せて）
+        if (referrerData.email) {
+            emailPromises.push(mailTransporter.sendMail({
+                from: 'GourMap <noreply@groumap.com>',
+                to: referrerData.email,
+                subject: '【GourMap】友達紹介成功！1000ポイント獲得可能',
+                html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #FF6B35;">🎊 友達紹介成功！</h2>
+                
+                <p>こんにちは、${referrerData.username || 'ユーザー'}さん</p>
+                
+                <p>${newUserName}さんがあなたの紹介コードでGourMapに登録されました！</p>
+                
+                <div style="background-color: #FFF5F1; border: 2px solid #FF6B35; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                  <h3 style="color: #FF6B35; margin: 0 0 10px 0;">🎁 紹介報酬</h3>
+                  <p style="font-size: 24px; font-weight: bold; color: #FF6B35; margin: 0;">1,000ポイント</p>
+                  <p style="margin: 10px 0 0 0;">アプリの通知から受け取ってください</p>
+                </div>
+                
+                <p>アプリの「お知らせ」で通知を確認し、「受け取る」ボタンを押してポイントを獲得してください。</p>
+                
+                <p>引き続き、お友達をご紹介ください！</p>
+                
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #666;">
+                  このメールは自動送信されています。<br>
+                  GourMap運営チーム
+                </p>
+              </div>
+            `,
+            }));
+        }
+        // メール送信を並列実行
+        if (emailPromises.length > 0) {
+            await Promise.all(emailPromises);
+            console.log('紹介ボーナスメール送信完了');
+        }
+        console.log(`紹介通知とメール送信完了: ${referrerId} -> ${newUserId}`);
+    }
+    catch (error) {
+        console.error('紹介通知・メール送信エラー:', error);
     }
 });
 //# sourceMappingURL=index.js.map

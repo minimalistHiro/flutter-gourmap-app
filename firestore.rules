@@ -4,12 +4,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // ユーザーコレクション
     match /users/{userId} {
-      // 読み取り: 自分のデータのみ
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // 読み取り: 自分のデータのみ、または紹介コード検証のため全ユーザーに読み取り許可
+      allow read: if true;  // 紹介コード検証のため未認証ユーザーも含めて全ユーザーに読み取り許可
       // 書き込み: 自分のデータのみ
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false; // 削除は禁止
+      allow delete: if request.auth != null && request.auth.uid == userId; // 自分のデータは削除可能
     }
     
     // 店舗コレクション
@@ -63,13 +63,18 @@ service cloud.firestore {
     
     // 通知コレクション
     match /notifications/{notificationId} {
-      // 読み取り: 認証済みユーザー
-      allow read: if request.auth != null;
-      // 書き込み: 店舗スタッフのみ（限定書き込み）
-      allow create: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.staffIds;
-      allow update, delete: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.staffIds;
+      // 読み取り: 認証済みユーザー（対象ユーザーのみまたは全体通知）
+      allow read: if request.auth != null && (
+        !('targetUserId' in resource.data) ||
+        resource.data.targetUserId == null ||
+        resource.data.targetUserId == request.auth.uid
+      );
+      // 書き込み: システム通知の作成を許可（紹介システム用）
+      allow create: if request.auth != null;
+      // 更新: 紹介報酬の受け取り状態更新を許可
+      allow update: if request.auth != null;
+      // 削除: 認証済みユーザー
+      allow delete: if request.auth != null;
     }
     
     // クーポンコレクション
@@ -130,12 +135,43 @@ service cloud.firestore {
       // 読み取り: 自分のポイント履歴のみ
       allow read: if request.auth != null && 
         resource.data.userId == request.auth.uid;
-      // 作成: 認証済みユーザー（自分のポイント履歴のみ）
-      allow create: if request.auth != null && 
-        request.resource.data.userId == request.auth.uid;
+      // 作成: 認証済みユーザー（自分のポイント履歴または紹介関連の履歴作成を許可）
+      allow create: if request.auth != null && (
+        // 自分のポイント履歴
+        request.resource.data.userId == request.auth.uid ||
+        // 紹介システムによる履歴作成（紹介者が被紹介者の履歴を作成する場合）
+        (request.resource.data.type in ['referral_bonus', 'referral_reward'] &&
+         request.resource.data.get('relatedUserId', null) != null)
+      );
       // 更新・削除: 自分のポイント履歴のみ
       allow update, delete: if request.auth != null && 
         resource.data.userId == request.auth.uid;
+    }
+    
+    // 紹介履歴コレクション
+    match /referral_history/{historyId} {
+      // 読み取り: 紹介者または被紹介者のみ
+      allow read: if request.auth != null && (
+        resource.data.referrerId == request.auth.uid ||
+        resource.data.newUserId == request.auth.uid
+      );
+      // 作成: 認証済みユーザー（紹介関係者として）
+      allow create: if request.auth != null && (
+        // 被紹介者として作成
+        request.resource.data.newUserId == request.auth.uid ||
+        // 紹介者として作成（紹介システム用）
+        request.resource.data.referrerId == request.auth.uid
+      );
+      // 更新・削除: 関係者のみ（アカウント削除時）
+      allow update: if request.auth != null && (
+        resource.data.referrerId == request.auth.uid ||
+        resource.data.newUserId == request.auth.uid
+      );
+      // 削除: アカウント削除時のみ許可
+      allow delete: if request.auth != null && (
+        resource.data.referrerId == request.auth.uid ||
+        resource.data.newUserId == request.auth.uid
+      );
     }
     
     // その他のコレクション

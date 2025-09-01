@@ -49,6 +49,14 @@ class FirebaseAuthService {
         'readNotifications': [], // 既読通知リストを追加
         'accountType': 'email', // アカウント作成方法を追加
       });
+      
+      // 紹介コードを生成して保存
+      try {
+        final referralCode = await _referralService.getUserReferralCode(userCredential.user!.uid);
+        print('新規ユーザーの紹介コード生成完了: $referralCode');
+      } catch (e) {
+        print('紹介コード生成エラー（非致命的）: $e');
+      }
 
       return userCredential;
     } catch (e) {
@@ -62,10 +70,20 @@ class FirebaseAuthService {
     required String password,
   }) async {
     try {
-      return await _auth.signInWithEmailAndPassword(
+      final userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      
+      // ログイン後、紹介コードが存在しない場合は生成
+      try {
+        await _referralService.getUserReferralCode(userCredential.user!.uid);
+        print('ログインユーザーの紹介コードチェック完了');
+      } catch (e) {
+        print('ログイン時の紹介コードチェックエラー（非致命的）: $e');
+      }
+      
+      return userCredential;
     } catch (e) {
       throw Exception('サインインに失敗しました: $e');
     }

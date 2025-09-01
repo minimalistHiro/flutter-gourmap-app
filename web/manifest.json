@@ -1,11 +1,11 @@
 {
-      "name": "GourMap",
-  "short_name": "GourMap",
+      "name": "GrouMap",
+  "short_name": "GrouMap",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FF6B35",
     "theme_color": "#FF6B35",
-    "description": "GourMap - グルメマップアプリ",
+    "description": "GrouMap - グループで楽しむマップアプリ",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

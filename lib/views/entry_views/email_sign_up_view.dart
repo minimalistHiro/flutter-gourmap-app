@@ -53,6 +53,35 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
   // ReferralService
   final ReferralService _referralService = ReferralService();
   
+  // 紹介関係をFirestoreに記録
+  Future<void> _recordReferralRelationship(String newUserId, String referrerId, String referralCode) async {
+    try {
+      print('紹介関係の記録開始: 新規ユーザー=$newUserId, 紹介者=$referrerId, コード=$referralCode');
+      
+      // 紹介履歴を記録
+      await FirebaseFirestore.instance.collection('referral_history').add({
+        'referrerId': referrerId,
+        'referredUserId': newUserId,
+        'referralCode': referralCode,
+        'createdAt': FieldValue.serverTimestamp(),
+        'pointsAwarded': 1000,
+        'status': 'completed',
+      });
+      
+      // 紹介者のユーザーデータに紹介成功履歴を追加
+      await FirebaseFirestore.instance.collection('users').doc(referrerId).update({
+        'referredUsers': FieldValue.arrayUnion([newUserId]),
+        'totalReferrals': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      print('紹介関係の記録完了');
+    } catch (e) {
+      print('紹介関係の記録エラー: $e');
+      // エラーが発生してもアカウント作成は継続
+    }
+  }
+  
   final List<String> ages = [
     '10代', '20代', '30代', '40代', '50代', '60代', '70代以上'
   ];
@@ -125,23 +154,36 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
         return; // ユーザーが入力を変更した場合は検証をキャンセル
       }
 
-      final result = await _referralService.validateReferralCode(code.trim());
+      final trimmedCode = code.trim();
+      print('=== 紹介コード検証開始 ===');
+      print('入力されたコード: $trimmedCode');
+      print('コード長: ${trimmedCode.length}');
+      print('コード形式チェック: ${RegExp(r'^[A-Za-z0-9]{8}$').hasMatch(trimmedCode)}');
+      
+      final result = await _referralService.validateReferralCode(trimmedCode);
+      print('検証結果: $result');
       
       if (mounted && code.trim() == referralCode.trim()) {
         setState(() {
           _isValidatingReferralCode = false;
           if (result != null) {
             _referralCodeValidationMessage = '✓ ${result['username']}さんの紹介コードです';
+            print('検証成功: ${result['username']}さんの紹介コード');
           } else {
             _referralCodeValidationMessage = '✗ 無効な紹介コードです';
+            print('検証失敗: 紹介コードが見つかりません');
           }
         });
       }
     } catch (e) {
+      print('=== 紹介コード検証エラー ===');
+      print('エラー詳細: $e');
+      print('エラータイプ: ${e.runtimeType}');
+      
       if (mounted && code.trim() == referralCode.trim()) {
         setState(() {
           _isValidatingReferralCode = false;
-          _referralCodeValidationMessage = '✗ 検証に失敗しました';
+          _referralCodeValidationMessage = '✗ 検証に失敗しました: $e';
         });
       }
     }
@@ -310,49 +352,82 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
 
       final User? user = userCredential.user;
       if (user != null) {
-        // Firestoreにユーザー情報を保存
-        print('Firestore ユーザー情報保存開始...');
-        
-        try {
-          print('Firestore保存開始 - profileImageUrl: $profileImageUrl');
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'uid': user.uid,
-            'email': email,
-            'username': username,
-            'age': age,
-            'address': address,
-            'gender': gender, // 性別を追加
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'profileImageUrl': profileImageUrl, // アップロードした画像のURL
-            'points': 0, // 初期ポイント
-            'isActive': true, // アカウントの有効状態
-            'lastLoginAt': FieldValue.serverTimestamp(), // 最終ログイン時刻
-            'isStoreOwner': false, // 店舗アカウントか否かのステータス
-            'goldStamps': 0, // ゴールドスタンプ数
-            'paid': 0, // 総支払額
-            'readNotifications': [], // 既読通知リスト
-            'accountType': 'email', // アカウント作成方法
-            'isOwner': false, // オーナーフラグ
-          });
+                  // Firestoreにユーザー情報を保存
+          print('Firestore ユーザー情報保存開始...');
+          
+          try {
+            print('Firestore保存開始 - profileImageUrl: $profileImageUrl');
+            
+            // ユーザーの基本情報を保存
+            Map<String, dynamic> userData = {
+              'uid': user.uid,
+              'email': email,
+              'username': username,
+              'age': age,
+              'address': address,
+              'gender': gender, // 性別を追加
+              'createdAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'profileImageUrl': profileImageUrl, // アップロードした画像のURL
+              'points': 0, // 初期ポイント
+              'isActive': true, // アカウントの有効状態
+              'lastLoginAt': FieldValue.serverTimestamp(), // 最終ログイン時刻
+              'isStoreOwner': false, // 店舗アカウントか否かのステータス
+              'goldStamps': 0, // ゴールドスタンプ数
+              'paid': 0, // 総支払額
+              'readNotifications': [], // 既読通知リスト
+              'accountType': 'email', // アカウント作成方法
+              'isOwner': false, // オーナーフラグ
+              'referredUsers': [], // 紹介したユーザーリスト
+              'totalReferrals': 0, // 総紹介数
+            };
+            
+            // 紹介コードが入力されている場合は保存
+            if (referralCode.trim().isNotEmpty) {
+              userData['usedReferralCode'] = referralCode.trim();
+              userData['showReferralBonus'] = true; // 紹介ボーナス表示フラグ
+              print('紹介コードをユーザーデータに追加: ${referralCode.trim()}');
+            }
+            
+            await FirebaseFirestore.instance.collection('users').doc(user.uid).set(userData);
           
           print('Firestore ユーザー情報保存成功 - profileImageUrl: $profileImageUrl');
           
           // 紹介コード処理
           if (referralCode.trim().isNotEmpty) {
             try {
-              print('紹介コード処理開始: $referralCode');
-              await _referralService.processReferral(user.uid, referralCode.trim());
-              print('紹介コード処理成功');
+              print('紹介コード処理開始: ${referralCode.trim()}');
               
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('紹介コードが適用され、1000ポイントを獲得しました！'),
-                    backgroundColor: Colors.green,
-                    duration: Duration(seconds: 3),
-                  ),
-                );
+              // 紹介コードの存在確認
+              final referrerData = await _referralService.validateReferralCode(referralCode.trim());
+              if (referrerData != null) {
+                // 紹介処理実行
+                final referralResult = await _referralService.processReferral(user.uid, referralCode.trim());
+                print('紹介コード処理成功');
+                
+                // 紹介関係をFirestoreに記録
+                await _recordReferralRelationship(user.uid, referrerData['uid'], referralCode.trim());
+                
+                // ポップアップでポイント獲得を表示
+                if (mounted && referralResult['success'] == true) {
+                  // サインアップ完了後にポップアップを表示
+                  Future.delayed(const Duration(milliseconds: 500), () {
+                    if (mounted) {
+                      ReferralService.showNewUserReferralBonus(context, referralResult);
+                    }
+                  });
+                }
+              } else {
+                print('紹介コード無効: ${referralCode.trim()}');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('紹介コードが無効です。正しいコードを確認してください。'),
+                      backgroundColor: Colors.orange,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                }
               }
             } catch (referralError) {
               print('紹介コード処理エラー: $referralError');
@@ -1033,13 +1108,24 @@ class _EmailSignUpViewState extends State<EmailSignUpView> {
         TextField(
           controller: _referralCodeController,
           onChanged: (value) {
-            setState(() => referralCode = value);
-            _validateReferralCode(value);
+            final upperValue = value.toUpperCase();
+            // カーソル位置を保持しつつ大文字に変換
+            if (value != upperValue) {
+              final cursorPos = _referralCodeController.selection.baseOffset;
+              _referralCodeController.value = TextEditingValue(
+                text: upperValue,
+                selection: TextSelection.fromPosition(
+                  TextPosition(offset: cursorPos),
+                ),
+              );
+            }
+            setState(() => referralCode = upperValue);
+            _validateReferralCode(upperValue);
           },
           maxLength: 8,
           textCapitalization: TextCapitalization.characters,
           decoration: InputDecoration(
-            hintText: '友達から教えてもらったコードを入力',
+            hintText: '8文字の英数字コード（自動で大文字に変換）',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.grey[300]!),
